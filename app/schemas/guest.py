@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 GuestStatus = Literal["attend", "decline", "undecided"]
@@ -15,7 +15,8 @@ class RsvpRequest(BaseModel):
     total_adults: int = Field(default=0, ge=0)
     total_children: int = Field(default=0, ge=0)
     diet_notes: str | None = Field(default=None, max_length=500)
-    need_cake: bool = False
+    need_invitation: bool = False
+    invitation_address: str | None = Field(default=None, max_length=500)
     blessing_message: str | None = Field(default=None, max_length=1000)
 
     @field_validator("name", "phone")
@@ -28,6 +29,22 @@ class RsvpRequest(BaseModel):
     def normalize_phone(cls, value: str) -> str:
         return "".join(ch for ch in value if ch.isdigit() or ch == "+")
 
+    @field_validator("invitation_address")
+    @classmethod
+    def strip_invitation_address(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @model_validator(mode="after")
+    def validate_invitation_address(self) -> "RsvpRequest":
+        if self.need_invitation and not self.invitation_address:
+            raise ValueError("需要喜帖時請填寫寄送地址")
+        if not self.need_invitation:
+            self.invitation_address = None
+        return self
+
 
 class GuestResponse(BaseModel):
     id: UUID
@@ -37,7 +54,8 @@ class GuestResponse(BaseModel):
     total_adults: int
     total_children: int
     diet_notes: str | None
-    need_cake: bool
+    need_invitation: bool
+    invitation_address: str | None
     blessing_message: str | None
     is_arrived: bool
     gift_amount: Decimal
@@ -58,6 +76,6 @@ class AdminSummary(BaseModel):
     total_children: int
     total_attendees: int
     vegetarian_count: int
-    cake_count: int
+    invitation_count: int
     total_gift_amount: Decimal
     arrived_count: int
