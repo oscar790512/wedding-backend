@@ -39,6 +39,10 @@ def get_summary(_admin: dict = Depends(get_current_admin)) -> AdminSummary:
         invitation_count=sum(
             1 for g in attending if g.get("need_invitation")
         ),
+        child_seats_count=sum(g.get("child_seats") or 0 for g in attending),
+        will_send_gift_count=sum(
+            1 for g in guests if g["status"] == "decline" and g.get("will_send_gift")
+        ),
         total_gift_amount=sum(
             (Decimal(str(g.get("gift_amount") or 0)) for g in guests),
             Decimal("0"),

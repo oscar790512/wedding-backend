@@ -14,9 +14,11 @@ class RsvpRequest(BaseModel):
     status: GuestStatus
     total_adults: int = Field(default=0, ge=0)
     total_children: int = Field(default=0, ge=0)
+    child_seats: int = Field(default=0, ge=0)
     diet_notes: str | None = Field(default=None, max_length=500)
     need_invitation: bool = False
     invitation_address: str | None = Field(default=None, max_length=500)
+    will_send_gift: bool = False
     blessing_message: str | None = Field(default=None, max_length=1000)
 
     @field_validator("name", "phone")
@@ -38,11 +40,27 @@ class RsvpRequest(BaseModel):
         return stripped or None
 
     @model_validator(mode="after")
-    def validate_invitation_address(self) -> "RsvpRequest":
+    def validate_rsvp_fields(self) -> "RsvpRequest":
+        if self.status == "decline":
+            self.total_adults = 0
+            self.total_children = 0
+            self.child_seats = 0
+            self.diet_notes = None
+            self.need_invitation = False
+            self.invitation_address = None
+        else:
+            self.will_send_gift = False
+
         if self.need_invitation and not self.invitation_address:
             raise ValueError("需要喜帖時請填寫寄送地址")
         if not self.need_invitation:
             self.invitation_address = None
+
+        if self.total_children <= 0:
+            self.child_seats = 0
+        elif self.child_seats > self.total_children:
+            raise ValueError("兒童座椅數量不可超過小孩人數")
+
         return self
 
 
@@ -53,9 +71,11 @@ class GuestResponse(BaseModel):
     status: GuestStatus
     total_adults: int
     total_children: int
+    child_seats: int
     diet_notes: str | None
     need_invitation: bool
     invitation_address: str | None
+    will_send_gift: bool
     blessing_message: str | None
     is_arrived: bool
     gift_amount: Decimal
@@ -77,5 +97,7 @@ class AdminSummary(BaseModel):
     total_attendees: int
     vegetarian_count: int
     invitation_count: int
+    child_seats_count: int
+    will_send_gift_count: int
     total_gift_amount: Decimal
     arrived_count: int
