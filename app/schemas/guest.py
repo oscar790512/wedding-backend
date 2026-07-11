@@ -114,8 +114,11 @@ class GuestBase(BaseModel):
 
         if self.decline_response != "request_cake":
             self.cake_status = "not_required"
+            self.shipping_address = None
+        elif not self.shipping_address:
+            raise ValueError("希望收到喜餅時請填寫收件地址")
         elif self.cake_status == "not_required":
-            self.cake_status = "pending_address"
+            self.cake_status = "pending_send"
 
         return self
 
@@ -129,7 +132,6 @@ class RsvpRequest(GuestBase):
             "guest_category",
             "shipping_recipient",
             "shipping_phone",
-            "shipping_address",
             "shipping_date",
             "tracking_no",
             "is_arrived",
@@ -143,10 +145,15 @@ class RsvpRequest(GuestBase):
             "pending_send" if data.get("need_invitation") else "not_required"
         )
         data["cake_status"] = (
-            "pending_address"
+            "pending_send"
             if data.get("decline_response") == "request_cake"
             else "not_required"
         )
+        if data.get("decline_response") == "request_cake":
+            data["shipping_recipient"] = data.get("name")
+            data["shipping_phone"] = data.get("phone")
+        else:
+            data["shipping_address"] = None
         return data
 
 
@@ -255,6 +262,24 @@ class GuestResponse(BaseModel):
 
 class GuestCheckinUpdate(AdminGuestUpdate):
     pass
+
+
+class TableSettingBase(BaseModel):
+    table_name: str = Field(min_length=1, max_length=100)
+    capacity: int = Field(default=12, ge=1, le=999)
+
+    @field_validator("table_name")
+    @classmethod
+    def strip_table_name(cls, value: str) -> str:
+        return value.strip()
+
+
+class TableSettingUpsert(TableSettingBase):
+    pass
+
+
+class TableSettingResponse(TableSettingBase):
+    updated_at: str | None = None
 
 
 class AdminSummary(BaseModel):

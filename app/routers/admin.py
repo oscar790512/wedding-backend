@@ -13,6 +13,8 @@ from app.schemas.guest import (
     GuestResponse,
     GuestStatus,
     ShippingFilter,
+    TableSettingResponse,
+    TableSettingUpsert,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -46,6 +48,42 @@ def _load_guest_or_404(guest_id: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Guest not found",
+        )
+    return response.data[0]
+
+
+@router.get("/table-settings", response_model=list[TableSettingResponse])
+def list_table_settings(
+    _admin: dict = Depends(get_current_admin),
+) -> list[TableSettingResponse]:
+    response = (
+        get_supabase()
+        .table("table_settings")
+        .select("table_name,capacity,updated_at")
+        .order("table_name")
+        .execute()
+    )
+    return response.data or []
+
+
+@router.post("/table-settings", response_model=TableSettingResponse)
+def upsert_table_setting(
+    payload: TableSettingUpsert,
+    _admin: dict = Depends(get_current_admin),
+) -> TableSettingResponse:
+    data = payload.model_dump(mode="json")
+    data["updated_at"] = _utc_now()
+
+    response = (
+        get_supabase()
+        .table("table_settings")
+        .upsert(data, on_conflict="table_name")
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save table setting",
         )
     return response.data[0]
 
