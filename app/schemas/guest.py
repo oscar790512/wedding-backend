@@ -23,6 +23,8 @@ class GuestBase(BaseModel):
     status: GuestStatus = "undecided"
     total_adults: int = Field(default=0, ge=0)
     total_children: int = Field(default=0, ge=0)
+    actual_adults: int | None = Field(default=None, ge=0)
+    actual_children: int | None = Field(default=None, ge=0)
     child_seats: int = Field(default=0, ge=0)
     diet_notes: str | None = Field(default=None, max_length=500)
     need_invitation: bool = False
@@ -89,6 +91,8 @@ class GuestBase(BaseModel):
         if self.status == "decline":
             self.total_adults = 0
             self.total_children = 0
+            self.actual_adults = None
+            self.actual_children = None
             self.child_seats = 0
             self.diet_notes = None
             self.need_invitation = False
@@ -135,6 +139,8 @@ class RsvpRequest(GuestBase):
             "shipping_date",
             "tracking_no",
             "is_arrived",
+            "actual_adults",
+            "actual_children",
             "gift_amount",
             "allocated_table",
             "admin_notes",
@@ -167,6 +173,8 @@ class AdminGuestUpdate(BaseModel):
     status: GuestStatus | None = None
     total_adults: int | None = Field(default=None, ge=0)
     total_children: int | None = Field(default=None, ge=0)
+    actual_adults: int | None = Field(default=None, ge=0)
+    actual_children: int | None = Field(default=None, ge=0)
     child_seats: int | None = Field(default=None, ge=0)
     diet_notes: str | None = Field(default=None, max_length=500)
     need_invitation: bool | None = None
@@ -237,6 +245,8 @@ class GuestResponse(BaseModel):
     status: GuestStatus
     total_adults: int
     total_children: int
+    actual_adults: int | None = None
+    actual_children: int | None = None
     child_seats: int
     diet_notes: str | None
     need_invitation: bool
