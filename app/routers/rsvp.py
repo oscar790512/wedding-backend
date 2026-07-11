@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.database import get_supabase
@@ -16,11 +18,13 @@ def submit_rsvp(payload: RsvpRequest) -> GuestResponse:
 
     supabase = get_supabase()
     guest_data = payload.model_dump()
+    guest_data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     existing = (
         supabase.table("guests")
         .select("id")
         .eq("phone", payload.phone)
+        .is_("deleted_at", "null")
         .limit(1)
         .execute()
     )

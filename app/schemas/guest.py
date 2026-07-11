@@ -1,5 +1,6 @@
+from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -7,12 +8,19 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 GuestStatus = Literal["attend", "decline", "undecided"]
 DeclineResponse = Literal["blessing_only", "request_cake"]
+InvitationStatus = Literal[
+    "not_required", "pending_address", "pending_send", "sent", "received"
+]
+CakeStatus = Literal[
+    "not_required", "pending_address", "pending_send", "sent", "pickup"
+]
+ShippingFilter = Literal["invitation", "cake", "pending"]
 
 
-class RsvpRequest(BaseModel):
+class GuestBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     phone: str = Field(min_length=8, max_length=20)
-    status: GuestStatus
+    status: GuestStatus = "undecided"
     total_adults: int = Field(default=0, ge=0)
     total_children: int = Field(default=0, ge=0)
     child_seats: int = Field(default=0, ge=0)
@@ -21,27 +29,63 @@ class RsvpRequest(BaseModel):
     invitation_address: str | None = Field(default=None, max_length=500)
     decline_response: DeclineResponse | None = None
     blessing_message: str | None = Field(default=None, max_length=1000)
+    guest_category: str | None = Field(default=None, max_length=100)
+    invitation_status: InvitationStatus = "not_required"
+    cake_status: CakeStatus = "not_required"
+    shipping_recipient: str | None = Field(default=None, max_length=100)
+    shipping_phone: str | None = Field(default=None, max_length=20)
+    shipping_address: str | None = Field(default=None, max_length=500)
+    shipping_date: date | None = None
+    tracking_no: str | None = Field(default=None, max_length=100)
+    is_arrived: bool = False
+    gift_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    allocated_table: str | None = Field(default=None, max_length=100)
+    admin_notes: str | None = Field(default=None, max_length=1000)
 
     @field_validator("name", "phone")
     @classmethod
-    def strip_whitespace(cls, value: str) -> str:
+    def strip_required_text(cls, value: str) -> str:
         return value.strip()
 
     @field_validator("phone")
     @classmethod
     def normalize_phone(cls, value: str) -> str:
-        return "".join(ch for ch in value if ch.isdigit() or ch == "+")
+        normalized = "".join(ch for ch in value.strip() if ch.isdigit() or ch == "+")
+        if not normalized:
+            raise ValueError("Phone is required")
+        return normalized
 
-    @field_validator("invitation_address")
+    @field_validator("shipping_phone")
     @classmethod
-    def strip_invitation_address(cls, value: str | None) -> str | None:
+    def normalize_optional_phone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = "".join(ch for ch in value.strip() if ch.isdigit() or ch == "+")
+        return normalized or None
+
+    @field_validator(
+        "diet_notes",
+        "invitation_address",
+        "blessing_message",
+        "guest_category",
+        "shipping_recipient",
+        "shipping_address",
+        "tracking_no",
+        "allocated_table",
+        "admin_notes",
+    )
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         stripped = value.strip()
         return stripped or None
 
     @model_validator(mode="after")
-    def validate_rsvp_fields(self) -> "RsvpRequest":
+    def validate_guest_fields(self) -> "GuestBase":
+        if self.status == "attend" and self.total_adults < 1:
+            raise ValueError("Attending guests must include at least one adult")
+
         if self.status == "decline":
             self.total_adults = 0
             self.total_children = 0
@@ -49,6 +93,7 @@ class RsvpRequest(BaseModel):
             self.diet_notes = None
             self.need_invitation = False
             self.invitation_address = None
+            self.invitation_status = "not_required"
             if not self.decline_response:
                 raise ValueError("無法出席時請選擇一個回覆選項")
         else:
@@ -58,13 +103,124 @@ class RsvpRequest(BaseModel):
             raise ValueError("需要喜帖時請填寫寄送地址")
         if not self.need_invitation:
             self.invitation_address = None
+            self.invitation_status = "not_required"
+        elif self.invitation_status == "not_required":
+            self.invitation_status = "pending_send"
 
         if self.total_children <= 0:
             self.child_seats = 0
         elif self.child_seats > self.total_children:
             raise ValueError("兒童座椅數量不可超過小孩人數")
 
+        if self.decline_response != "request_cake":
+            self.cake_status = "not_required"
+        elif self.cake_status == "not_required":
+            self.cake_status = "pending_address"
+
         return self
+
+
+class RsvpRequest(GuestBase):
+    status: GuestStatus
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        data = super().model_dump(*args, **kwargs)
+        admin_only_fields = {
+            "guest_category",
+            "shipping_recipient",
+            "shipping_phone",
+            "shipping_address",
+            "shipping_date",
+            "tracking_no",
+            "is_arrived",
+            "gift_amount",
+            "allocated_table",
+            "admin_notes",
+        }
+        for field in admin_only_fields:
+            data.pop(field, None)
+        data["invitation_status"] = (
+            "pending_send" if data.get("need_invitation") else "not_required"
+        )
+        data["cake_status"] = (
+            "pending_address"
+            if data.get("decline_response") == "request_cake"
+            else "not_required"
+        )
+        return data
+
+
+class AdminGuestCreate(GuestBase):
+    pass
+
+
+class AdminGuestUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    phone: str | None = Field(default=None, min_length=8, max_length=20)
+    status: GuestStatus | None = None
+    total_adults: int | None = Field(default=None, ge=0)
+    total_children: int | None = Field(default=None, ge=0)
+    child_seats: int | None = Field(default=None, ge=0)
+    diet_notes: str | None = Field(default=None, max_length=500)
+    need_invitation: bool | None = None
+    invitation_address: str | None = Field(default=None, max_length=500)
+    decline_response: DeclineResponse | None = None
+    blessing_message: str | None = Field(default=None, max_length=1000)
+    guest_category: str | None = Field(default=None, max_length=100)
+    invitation_status: InvitationStatus | None = None
+    cake_status: CakeStatus | None = None
+    shipping_recipient: str | None = Field(default=None, max_length=100)
+    shipping_phone: str | None = Field(default=None, max_length=20)
+    shipping_address: str | None = Field(default=None, max_length=500)
+    shipping_date: date | None = None
+    tracking_no: str | None = Field(default=None, max_length=100)
+    is_arrived: bool | None = None
+    gift_amount: Decimal | None = Field(default=None, ge=0)
+    allocated_table: str | None = Field(default=None, max_length=100)
+    admin_notes: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("name", "phone")
+    @classmethod
+    def strip_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip()
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = "".join(ch for ch in value.strip() if ch.isdigit() or ch == "+")
+        if not normalized:
+            raise ValueError("Phone is required")
+        return normalized
+
+    @field_validator("shipping_phone")
+    @classmethod
+    def normalize_optional_phone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = "".join(ch for ch in value.strip() if ch.isdigit() or ch == "+")
+        return normalized or None
+
+    @field_validator(
+        "diet_notes",
+        "invitation_address",
+        "blessing_message",
+        "guest_category",
+        "shipping_recipient",
+        "shipping_address",
+        "tracking_no",
+        "allocated_table",
+        "admin_notes",
+    )
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
 
 class GuestResponse(BaseModel):
@@ -80,16 +236,25 @@ class GuestResponse(BaseModel):
     invitation_address: str | None
     decline_response: DeclineResponse | None
     blessing_message: str | None
+    guest_category: str | None = None
+    invitation_status: InvitationStatus = "not_required"
+    cake_status: CakeStatus = "not_required"
+    shipping_recipient: str | None = None
+    shipping_phone: str | None = None
+    shipping_address: str | None = None
+    shipping_date: date | None = None
+    tracking_no: str | None = None
     is_arrived: bool
     gift_amount: Decimal
     allocated_table: str | None
     admin_notes: str | None
     created_at: str
+    updated_at: str | None = None
+    deleted_at: str | None = None
 
 
-class GuestCheckinUpdate(BaseModel):
-    is_arrived: bool | None = None
-    gift_amount: Decimal | None = Field(default=None, ge=0)
+class GuestCheckinUpdate(AdminGuestUpdate):
+    pass
 
 
 class AdminSummary(BaseModel):
@@ -105,3 +270,7 @@ class AdminSummary(BaseModel):
     decline_request_cake_count: int
     total_gift_amount: Decimal
     arrived_count: int
+    undecided_count: int = 0
+    invitation_pending_count: int = 0
+    cake_pending_count: int = 0
+    unassigned_table_count: int = 0

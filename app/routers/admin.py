@@ -1,11 +1,19 @@
 import re
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth import get_current_admin
 from app.database import get_supabase
-from app.schemas.guest import AdminSummary, GuestCheckinUpdate, GuestResponse
+from app.schemas.guest import (
+    AdminGuestCreate,
+    AdminGuestUpdate,
+    AdminSummary,
+    GuestResponse,
+    GuestStatus,
+    ShippingFilter,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -16,9 +24,35 @@ def _sanitize_search(value: str) -> str:
     return _SEARCH_UNSAFE.sub("", value.strip())
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _active_guests_query():
+    return get_supabase().table("guests").select("*").is_("deleted_at", "null")
+
+
+def _load_guest_or_404(guest_id: str) -> dict:
+    response = (
+        get_supabase()
+        .table("guests")
+        .select("*")
+        .eq("id", guest_id)
+        .is_("deleted_at", "null")
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Guest not found",
+        )
+    return response.data[0]
+
+
 @router.get("/summary", response_model=AdminSummary)
 def get_summary(_admin: dict = Depends(get_current_admin)) -> AdminSummary:
-    response = get_supabase().table("guests").select("*").execute()
+    response = _active_guests_query().execute()
     guests = response.data or []
 
     attending = [g for g in guests if g["status"] == "attend"]
@@ -52,44 +86,121 @@ def get_summary(_admin: dict = Depends(get_current_admin)) -> AdminSummary:
             Decimal("0"),
         ),
         arrived_count=sum(1 for g in guests if g.get("is_arrived")),
+        undecided_count=sum(1 for g in guests if g.get("status") == "undecided"),
+        invitation_pending_count=sum(
+            1
+            for g in guests
+            if g.get("invitation_status") in {"pending_address", "pending_send"}
+        ),
+        cake_pending_count=sum(
+            1
+            for g in guests
+            if g.get("cake_status") in {"pending_address", "pending_send"}
+        ),
+        unassigned_table_count=sum(
+            (g.get("total_adults") or 0) + (g.get("total_children") or 0)
+            for g in attending
+            if not g.get("allocated_table")
+        ),
     )
 
 
 @router.get("/guests", response_model=list[GuestResponse])
 def list_guests(
     q: str | None = Query(default=None, max_length=100),
+    status_filter: GuestStatus | None = Query(default=None, alias="status"),
+    shipping: ShippingFilter | None = Query(default=None),
+    category: str | None = Query(default=None, max_length=100),
+    table: str | None = Query(default=None, max_length=100),
+    has_diet_notes: bool | None = Query(default=None),
     _admin: dict = Depends(get_current_admin),
 ) -> list[GuestResponse]:
-    query = get_supabase().table("guests").select("*").order("created_at")
+    query = _active_guests_query().order("created_at")
 
     if q:
         search = _sanitize_search(q)
         if search:
             pattern = f"%{search}%"
-            query = query.or_(f"name.ilike.{pattern},phone.ilike.{pattern}")
+            query = query.or_(
+                "name.ilike.{0},phone.ilike.{0},guest_category.ilike.{0},"
+                "allocated_table.ilike.{0},admin_notes.ilike.{0}".format(pattern)
+            )
+
+    if status_filter:
+        query = query.eq("status", status_filter)
+    if category:
+        query = query.eq("guest_category", category.strip())
+    if table:
+        query = query.eq("allocated_table", table.strip())
+    if has_diet_notes is True:
+        query = query.filter("diet_notes", "not.is", "null")
+    elif has_diet_notes is False:
+        query = query.is_("diet_notes", "null")
+    if shipping == "invitation":
+        query = query.neq("invitation_status", "not_required")
+    elif shipping == "cake":
+        query = query.neq("cake_status", "not_required")
+    elif shipping == "pending":
+        query = query.or_(
+            "invitation_status.in.(pending_address,pending_send),"
+            "cake_status.in.(pending_address,pending_send)"
+        )
 
     response = query.execute()
     return response.data or []
 
 
-@router.patch("/guests/{guest_id}", response_model=GuestResponse)
-def update_guest_checkin(
-    guest_id: str,
-    payload: GuestCheckinUpdate,
+@router.post(
+    "/guests",
+    response_model=GuestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_guest(
+    payload: AdminGuestCreate,
     _admin: dict = Depends(get_current_admin),
 ) -> GuestResponse:
-    updates = payload.model_dump(exclude_unset=True)
+    data = payload.model_dump(mode="json")
+    now = _utc_now()
+    data["created_at"] = now
+    data["updated_at"] = now
+
+    response = get_supabase().table("guests").insert(data).execute()
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create guest",
+        )
+    return response.data[0]
+
+
+@router.patch("/guests/{guest_id}", response_model=GuestResponse)
+def update_guest(
+    guest_id: str,
+    payload: AdminGuestUpdate,
+    _admin: dict = Depends(get_current_admin),
+) -> GuestResponse:
+    updates = payload.model_dump(mode="json", exclude_unset=True)
     if not updates:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No fields to update",
         )
 
+    existing = _load_guest_or_404(guest_id)
+    merged = {
+        **existing,
+        **updates,
+    }
+    validated = AdminGuestCreate.model_validate(merged)
+    updates = validated.model_dump(mode="json")
+    updates["updated_at"] = _utc_now()
+
     response = (
         get_supabase()
         .table("guests")
         .update(updates)
         .eq("id", guest_id)
+        .is_("deleted_at", "null")
         .execute()
     )
     if not response.data:
@@ -99,3 +210,27 @@ def update_guest_checkin(
         )
 
     return response.data[0]
+
+
+@router.delete("/guests/{guest_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_guest(
+    guest_id: str,
+    _admin: dict = Depends(get_current_admin),
+) -> None:
+    _load_guest_or_404(guest_id)
+    now = _utc_now()
+
+    response = (
+        get_supabase()
+        .table("guests")
+        .update({"deleted_at": now, "updated_at": now})
+        .eq("id", guest_id)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Guest not found",
+        )
+    return None
