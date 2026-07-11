@@ -205,9 +205,10 @@ def get_summary(_admin: dict = Depends(get_current_admin)) -> AdminSummary:
         total_children=total_children,
         total_attendees=total_adults + total_children,
         vegetarian_count=sum(
-            1
+            (g.get("vegetarian_count") or 0)
+            or (g.get("vegetarian_adults") or 0)
+            + (g.get("vegetarian_children") or 0)
             for g in attending
-            if g.get("diet_notes") and g["diet_notes"].strip()
         ),
         invitation_count=sum(
             1 for g in attending if g.get("need_invitation")
@@ -260,8 +261,9 @@ def list_guests(
         if search:
             pattern = f"%{search}%"
             query = query.or_(
-                "name.ilike.{0},phone.ilike.{0},guest_category.ilike.{0},"
-                "allocated_table.ilike.{0},admin_notes.ilike.{0}".format(pattern)
+                "name.ilike.{0},phone.ilike.{0},email.ilike.{0},"
+                "guest_category.ilike.{0},allocated_table.ilike.{0},"
+                "admin_notes.ilike.{0}".format(pattern)
             )
 
     if status_filter:
