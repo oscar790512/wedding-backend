@@ -13,6 +13,7 @@ from app.schemas.guest import (
     GuestResponse,
     GuestStatus,
     ShippingFilter,
+    TableSettingRename,
     TableSettingResponse,
     TableSettingUpsert,
 )
@@ -86,6 +87,105 @@ def upsert_table_setting(
             detail="Failed to save table setting",
         )
     return response.data[0]
+
+
+@router.patch("/table-settings/rename", response_model=TableSettingResponse)
+def rename_table_setting(
+    payload: TableSettingRename,
+    _admin: dict = Depends(get_current_admin),
+) -> TableSettingResponse:
+    if payload.old_table_name == payload.new_table_name:
+        response = (
+            get_supabase()
+            .table("table_settings")
+            .select("table_name,capacity,updated_at")
+            .eq("table_name", payload.old_table_name)
+            .limit(1)
+            .execute()
+        )
+        if response.data:
+            return response.data[0]
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Table setting not found",
+        )
+
+    supabase = get_supabase()
+    existing = (
+        supabase.table("table_settings")
+        .select("table_name")
+        .eq("table_name", payload.new_table_name)
+        .limit(1)
+        .execute()
+    )
+    if existing.data:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Table name already exists",
+        )
+
+    updated_at = _utc_now()
+    current = (
+        supabase.table("table_settings")
+        .select("table_name,capacity,updated_at")
+        .eq("table_name", payload.old_table_name)
+        .limit(1)
+        .execute()
+    )
+
+    if not current.data:
+        setting_response = (
+            supabase.table("table_settings")
+            .insert(
+                {
+                    "table_name": payload.new_table_name,
+                    "capacity": 12,
+                    "updated_at": updated_at,
+                }
+            )
+            .execute()
+        )
+    else:
+        setting_response = (
+            supabase.table("table_settings")
+            .update({"table_name": payload.new_table_name, "updated_at": updated_at})
+            .eq("table_name", payload.old_table_name)
+            .execute()
+        )
+
+    if not setting_response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to rename table setting",
+        )
+
+    supabase.table("guests").update(
+        {"allocated_table": payload.new_table_name, "updated_at": updated_at}
+    ).eq("allocated_table", payload.old_table_name).is_(
+        "deleted_at", "null"
+    ).execute()
+
+    return setting_response.data[0]
+
+
+@router.delete("/table-settings", status_code=status.HTTP_204_NO_CONTENT)
+def delete_table_setting(
+    table_name: str = Query(min_length=1, max_length=100),
+    _admin: dict = Depends(get_current_admin),
+) -> None:
+    response = (
+        get_supabase()
+        .table("table_settings")
+        .delete()
+        .eq("table_name", table_name.strip())
+        .execute()
+    )
+    if response.data is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete table setting",
+        )
+    return None
 
 
 @router.get("/summary", response_model=AdminSummary)

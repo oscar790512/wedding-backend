@@ -278,6 +278,16 @@ class TableSettingUpsert(TableSettingBase):
     pass
 
 
+class TableSettingRename(BaseModel):
+    old_table_name: str = Field(min_length=1, max_length=100)
+    new_table_name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("old_table_name", "new_table_name")
+    @classmethod
+    def strip_table_name(cls, value: str) -> str:
+        return value.strip()
+
+
 class TableSettingResponse(TableSettingBase):
     updated_at: str | None = None
 
