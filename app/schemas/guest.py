@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 GuestStatus = Literal["attend", "decline", "undecided"]
+DeclineResponse = Literal["blessing_only", "request_cake"]
 
 
 class RsvpRequest(BaseModel):
@@ -18,7 +19,7 @@ class RsvpRequest(BaseModel):
     diet_notes: str | None = Field(default=None, max_length=500)
     need_invitation: bool = False
     invitation_address: str | None = Field(default=None, max_length=500)
-    will_send_gift: bool = False
+    decline_response: DeclineResponse | None = None
     blessing_message: str | None = Field(default=None, max_length=1000)
 
     @field_validator("name", "phone")
@@ -48,8 +49,10 @@ class RsvpRequest(BaseModel):
             self.diet_notes = None
             self.need_invitation = False
             self.invitation_address = None
+            if not self.decline_response:
+                raise ValueError("無法出席時請選擇一個回覆選項")
         else:
-            self.will_send_gift = False
+            self.decline_response = None
 
         if self.need_invitation and not self.invitation_address:
             raise ValueError("需要喜帖時請填寫寄送地址")
@@ -75,7 +78,7 @@ class GuestResponse(BaseModel):
     diet_notes: str | None
     need_invitation: bool
     invitation_address: str | None
-    will_send_gift: bool
+    decline_response: DeclineResponse | None
     blessing_message: str | None
     is_arrived: bool
     gift_amount: Decimal
@@ -98,6 +101,7 @@ class AdminSummary(BaseModel):
     vegetarian_count: int
     invitation_count: int
     child_seats_count: int
-    will_send_gift_count: int
+    decline_blessing_only_count: int
+    decline_request_cake_count: int
     total_gift_amount: Decimal
     arrived_count: int

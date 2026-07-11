@@ -22,6 +22,7 @@ def get_summary(_admin: dict = Depends(get_current_admin)) -> AdminSummary:
     guests = response.data or []
 
     attending = [g for g in guests if g["status"] == "attend"]
+    declined = [g for g in guests if g["status"] == "decline"]
     total_adults = sum(g["total_adults"] for g in attending)
     total_children = sum(g["total_children"] for g in attending)
 
@@ -40,8 +41,11 @@ def get_summary(_admin: dict = Depends(get_current_admin)) -> AdminSummary:
             1 for g in attending if g.get("need_invitation")
         ),
         child_seats_count=sum(g.get("child_seats") or 0 for g in attending),
-        will_send_gift_count=sum(
-            1 for g in guests if g["status"] == "decline" and g.get("will_send_gift")
+        decline_blessing_only_count=sum(
+            1 for g in declined if g.get("decline_response") == "blessing_only"
+        ),
+        decline_request_cake_count=sum(
+            1 for g in declined if g.get("decline_response") == "request_cake"
         ),
         total_gift_amount=sum(
             (Decimal(str(g.get("gift_amount") or 0)) for g in guests),
