@@ -1,4 +1,5 @@
 import re
+import secrets
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -10,6 +11,7 @@ from app.schemas.guest import (
     AdminGuestCreate,
     AdminGuestUpdate,
     AdminSummary,
+    GuestCheckinUpdate,
     GuestResponse,
     GuestStatus,
     ShippingFilter,
@@ -31,6 +33,29 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _generate_checkin_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def _create_unique_checkin_token() -> str:
+    supabase = get_supabase()
+    for _ in range(5):
+        token = _generate_checkin_token()
+        existing = (
+            supabase.table("guests")
+            .select("id")
+            .eq("checkin_token", token)
+            .limit(1)
+            .execute()
+        )
+        if not existing.data:
+            return token
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Failed to create check-in token",
+    )
+
+
 def _active_guests_query():
     return get_supabase().table("guests").select("*").is_("deleted_at", "null")
 
@@ -49,6 +74,24 @@ def _load_guest_or_404(guest_id: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Guest not found",
+        )
+    return response.data[0]
+
+
+def _load_guest_by_checkin_token_or_404(token: str) -> dict:
+    response = (
+        get_supabase()
+        .table("guests")
+        .select("*")
+        .eq("checkin_token", token)
+        .is_("deleted_at", "null")
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Check-in QR Code not found",
         )
     return response.data[0]
 
@@ -309,12 +352,106 @@ def create_guest(
     now = _utc_now()
     data["created_at"] = now
     data["updated_at"] = now
+    if data.get("status") == "attend":
+        data["checkin_token"] = _create_unique_checkin_token()
+        data["checkin_token_rotated_at"] = now
 
     response = get_supabase().table("guests").insert(data).execute()
     if not response.data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create guest",
+        )
+    return response.data[0]
+
+
+@router.get("/checkin/{token}", response_model=GuestResponse)
+def get_guest_by_checkin_token(
+    token: str,
+    _admin: dict = Depends(get_current_admin),
+) -> GuestResponse:
+    return _load_guest_by_checkin_token_or_404(token)
+
+
+@router.post("/guests/{guest_id}/checkin-token/reset", response_model=GuestResponse)
+def reset_guest_checkin_token(
+    guest_id: str,
+    _admin: dict = Depends(get_current_admin),
+) -> GuestResponse:
+    _load_guest_or_404(guest_id)
+    now = _utc_now()
+    response = (
+        get_supabase()
+        .table("guests")
+        .update(
+            {
+                "checkin_token": _create_unique_checkin_token(),
+                "checkin_token_rotated_at": now,
+                "updated_at": now,
+            }
+        )
+        .eq("id", guest_id)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Guest not found",
+        )
+    return response.data[0]
+
+
+@router.patch("/guests/{guest_id}/checkin", response_model=GuestResponse)
+def update_guest_checkin(
+    guest_id: str,
+    payload: GuestCheckinUpdate,
+    _admin: dict = Depends(get_current_admin),
+) -> GuestResponse:
+    updates = payload.model_dump(mode="json", exclude_unset=True)
+    allowed_fields = {
+        "is_arrived",
+        "actual_adults",
+        "actual_children",
+        "cake_status",
+        "checkin_note",
+    }
+    updates = {key: value for key, value in updates.items() if key in allowed_fields}
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update",
+        )
+
+    existing = _load_guest_or_404(guest_id)
+    if updates.get("is_arrived") is True and existing.get("status") != "attend":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only attending guests can be checked in",
+        )
+
+    now = _utc_now()
+    if "is_arrived" in updates:
+        if updates["is_arrived"]:
+            updates["arrived_at"] = existing.get("arrived_at") or now
+        else:
+            updates["arrived_at"] = None
+
+    updates["checkin_updated_at"] = now
+    updates["updated_at"] = now
+
+    response = (
+        get_supabase()
+        .table("guests")
+        .update(updates)
+        .eq("id", guest_id)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Guest not found",
         )
     return response.data[0]
 
@@ -340,6 +477,12 @@ def update_guest(
     validated = AdminGuestCreate.model_validate(merged)
     updates = validated.model_dump(mode="json")
     updates["updated_at"] = _utc_now()
+    if (
+        updates.get("status") == "attend"
+        and not existing.get("checkin_token")
+    ):
+        updates["checkin_token"] = _create_unique_checkin_token()
+        updates["checkin_token_rotated_at"] = updates["updated_at"]
 
     response = (
         get_supabase()

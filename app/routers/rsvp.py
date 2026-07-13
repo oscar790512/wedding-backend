@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import secrets
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -6,6 +7,29 @@ from app.database import get_supabase
 from app.schemas.guest import GuestResponse, RsvpRequest
 
 router = APIRouter(tags=["rsvp"])
+
+
+def _generate_checkin_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def _create_unique_checkin_token() -> str:
+    supabase = get_supabase()
+    for _ in range(5):
+        token = _generate_checkin_token()
+        existing = (
+            supabase.table("guests")
+            .select("id")
+            .eq("checkin_token", token)
+            .limit(1)
+            .execute()
+        )
+        if not existing.data:
+            return token
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Failed to create check-in token",
+    )
 
 
 @router.post("/rsvp", response_model=GuestResponse, status_code=status.HTTP_200_OK)
@@ -22,7 +46,7 @@ def submit_rsvp(payload: RsvpRequest) -> GuestResponse:
 
     existing = (
         supabase.table("guests")
-        .select("id")
+        .select("id,checkin_token")
         .eq("phone", payload.phone)
         .is_("deleted_at", "null")
         .limit(1)
@@ -30,13 +54,20 @@ def submit_rsvp(payload: RsvpRequest) -> GuestResponse:
     )
 
     if existing.data:
+        current = existing.data[0]
+        if payload.status == "attend" and not current.get("checkin_token"):
+            guest_data["checkin_token"] = _create_unique_checkin_token()
+            guest_data["checkin_token_rotated_at"] = guest_data["updated_at"]
         response = (
             supabase.table("guests")
             .update(guest_data)
-            .eq("id", existing.data[0]["id"])
+            .eq("id", current["id"])
             .execute()
         )
     else:
+        if payload.status == "attend":
+            guest_data["checkin_token"] = _create_unique_checkin_token()
+            guest_data["checkin_token_rotated_at"] = guest_data["updated_at"]
         response = supabase.table("guests").insert(guest_data).execute()
 
     if not response.data:

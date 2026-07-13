@@ -58,6 +58,9 @@ class GuestBase(BaseModel):
     shipping_date: date | None = None
     tracking_no: str | None = Field(default=None, max_length=100)
     is_arrived: bool = False
+    arrived_at: str | None = None
+    checkin_updated_at: str | None = None
+    checkin_note: str | None = Field(default=None, max_length=500)
     gift_amount: Decimal = Field(default=Decimal("0"), ge=0)
     allocated_table: str | None = Field(default=None, max_length=100)
     admin_notes: str | None = Field(default=None, max_length=1000)
@@ -103,6 +106,7 @@ class GuestBase(BaseModel):
         "shipping_recipient",
         "shipping_address",
         "tracking_no",
+        "checkin_note",
         "allocated_table",
         "admin_notes",
     )
@@ -192,6 +196,9 @@ class RsvpRequest(GuestBase):
             "actual_adults",
             "actual_children",
             "gift_amount",
+            "arrived_at",
+            "checkin_updated_at",
+            "checkin_note",
             "allocated_table",
             "admin_notes",
         }
@@ -249,6 +256,9 @@ class AdminGuestUpdate(BaseModel):
     shipping_date: date | None = None
     tracking_no: str | None = Field(default=None, max_length=100)
     is_arrived: bool | None = None
+    arrived_at: str | None = None
+    checkin_updated_at: str | None = None
+    checkin_note: str | None = Field(default=None, max_length=500)
     gift_amount: Decimal | None = Field(default=None, ge=0)
     allocated_table: str | None = Field(default=None, max_length=100)
     admin_notes: str | None = Field(default=None, max_length=1000)
@@ -298,6 +308,7 @@ class AdminGuestUpdate(BaseModel):
         "shipping_recipient",
         "shipping_address",
         "tracking_no",
+        "checkin_note",
         "allocated_table",
         "admin_notes",
     )
@@ -338,6 +349,11 @@ class GuestResponse(BaseModel):
     shipping_date: date | None = None
     tracking_no: str | None = None
     is_arrived: bool
+    arrived_at: str | None = None
+    checkin_updated_at: str | None = None
+    checkin_note: str | None = None
+    checkin_token: str | None = None
+    checkin_token_rotated_at: str | None = None
     gift_amount: Decimal
     allocated_table: str | None
     admin_notes: str | None
@@ -347,7 +363,19 @@ class GuestResponse(BaseModel):
 
 
 class GuestCheckinUpdate(AdminGuestUpdate):
-    pass
+    is_arrived: bool | None = None
+    actual_adults: int | None = Field(default=None, ge=0)
+    actual_children: int | None = Field(default=None, ge=0)
+    cake_status: CakeStatus | None = None
+    checkin_note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("checkin_note")
+    @classmethod
+    def strip_checkin_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
 
 class TableSettingBase(BaseModel):
