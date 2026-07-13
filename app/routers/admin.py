@@ -60,8 +60,8 @@ def list_table_settings(
     response = (
         get_supabase()
         .table("table_settings")
-        .select("table_name,capacity,updated_at")
-        .order("table_name")
+        .select("table_name,capacity,created_at,updated_at")
+        .order("created_at")
         .execute()
     )
     return response.data or []
@@ -94,11 +94,17 @@ def rename_table_setting(
     payload: TableSettingRename,
     _admin: dict = Depends(get_current_admin),
 ) -> TableSettingResponse:
+    if payload.old_table_name == "主桌" and payload.new_table_name != "主桌":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Main table name cannot be changed",
+        )
+
     if payload.old_table_name == payload.new_table_name:
         response = (
             get_supabase()
             .table("table_settings")
-            .select("table_name,capacity,updated_at")
+            .select("table_name,capacity,created_at,updated_at")
             .eq("table_name", payload.old_table_name)
             .limit(1)
             .execute()
@@ -127,7 +133,7 @@ def rename_table_setting(
     updated_at = _utc_now()
     current = (
         supabase.table("table_settings")
-        .select("table_name,capacity,updated_at")
+        .select("table_name,capacity,created_at,updated_at")
         .eq("table_name", payload.old_table_name)
         .limit(1)
         .execute()

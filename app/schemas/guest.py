@@ -362,6 +362,7 @@ class TableSettingRename(BaseModel):
 
 
 class TableSettingResponse(TableSettingBase):
+    created_at: str | None = None
     updated_at: str | None = None
 
 
