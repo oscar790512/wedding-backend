@@ -38,22 +38,7 @@ def _generate_checkin_token() -> str:
 
 
 def _create_unique_checkin_token() -> str:
-    supabase = get_supabase()
-    for _ in range(5):
-        token = _generate_checkin_token()
-        existing = (
-            supabase.table("guests")
-            .select("id")
-            .eq("checkin_token", token)
-            .limit(1)
-            .execute()
-        )
-        if not existing.data:
-            return token
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Failed to create check-in token",
-    )
+    return _generate_checkin_token()
 
 
 def _active_guests_query():
