@@ -20,7 +20,12 @@ InvitationStatus = Literal[
     "not_required", "pending_address", "pending_send", "sent", "received"
 ]
 CakeStatus = Literal[
-    "not_required", "pending_address", "pending_send", "sent", "pickup"
+    "not_required",
+    "pending_pickup",
+    "pending_address",
+    "pending_send",
+    "sent",
+    "pickup",
 ]
 ShippingFilter = Literal["invitation", "cake", "pending"]
 
@@ -152,7 +157,13 @@ class GuestBase(BaseModel):
         self.vegetarian_adults = self.vegetarian_count
         self.vegetarian_children = 0
 
-        if self.decline_response != "request_cake":
+        if self.status == "attend":
+            if self.cake_status not in {"pending_pickup", "pickup"}:
+                self.cake_status = "pending_pickup"
+            self.shipping_recipient = None
+            self.shipping_phone = None
+            self.shipping_address = None
+        elif self.decline_response != "request_cake":
             self.cake_status = "not_required"
             self.shipping_recipient = None
             self.shipping_phone = None
@@ -192,6 +203,8 @@ class RsvpRequest(GuestBase):
         data["cake_status"] = (
             "pending_send"
             if data.get("decline_response") == "request_cake"
+            else "pending_pickup"
+            if data.get("status") == "attend"
             else "not_required"
         )
         if data.get("decline_response") == "request_cake":

@@ -285,7 +285,7 @@ def list_guests(
     if shipping == "invitation":
         query = query.neq("invitation_status", "not_required")
     elif shipping == "cake":
-        query = query.neq("cake_status", "not_required")
+        query = query.eq("decline_response", "request_cake")
     elif shipping == "pending":
         query = query.or_(
             "invitation_status.in.(pending_address,pending_send),"
