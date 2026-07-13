@@ -400,6 +400,7 @@ def update_guest_checkin(
         "actual_children",
         "cake_status",
         "checkin_note",
+        "allocated_table",
     }
     updates = {key: value for key, value in updates.items() if key in allowed_fields}
     if not updates:

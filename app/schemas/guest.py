@@ -368,10 +368,11 @@ class GuestCheckinUpdate(AdminGuestUpdate):
     actual_children: int | None = Field(default=None, ge=0)
     cake_status: CakeStatus | None = None
     checkin_note: str | None = Field(default=None, max_length=500)
+    allocated_table: str | None = Field(default=None, max_length=100)
 
-    @field_validator("checkin_note")
+    @field_validator("checkin_note", "allocated_table")
     @classmethod
-    def strip_checkin_note(cls, value: str | None) -> str | None:
+    def strip_checkin_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         stripped = value.strip()
