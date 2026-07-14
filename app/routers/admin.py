@@ -3,14 +3,17 @@ import secrets
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.auth import get_current_admin
+from app.config import settings
 from app.database import get_supabase
 from app.schemas.guest import (
     AdminGuestCreate,
     AdminGuestUpdate,
     AdminSummary,
+    CronCounterIncrement,
+    CronCounterResponse,
     GuestCheckinUpdate,
     GuestResponse,
     GuestStatus,
@@ -43,6 +46,21 @@ def _create_unique_checkin_token() -> str:
 
 def _active_guests_query():
     return get_supabase().table("guests").select("*").is_("deleted_at", "null")
+
+
+def _verify_cron_counter_secret(secret: str | None) -> None:
+    configured_secret = settings.cron_counter_secret.strip()
+    if not configured_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cron counter secret is not configured",
+        )
+
+    if not secret or not secrets.compare_digest(secret, configured_secret):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid cron counter secret",
+        )
 
 
 def _load_guest_or_404(guest_id: str) -> dict:
@@ -79,6 +97,30 @@ def _load_guest_by_checkin_token_or_404(token: str) -> dict:
             detail="Check-in QR Code not found",
         )
     return response.data[0]
+
+
+@router.post("/cron-counter/increment", response_model=CronCounterResponse)
+def increment_cron_counter(
+    payload: CronCounterIncrement,
+    x_cron_secret: str | None = Header(default=None, alias="X-Cron-Secret"),
+) -> CronCounterResponse:
+    _verify_cron_counter_secret(x_cron_secret)
+
+    response = get_supabase().rpc(
+        "increment_api_counter",
+        {
+            "counter_name": payload.counter_key,
+            "increment_by": payload.amount,
+        },
+    ).execute()
+    data = response.data or []
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to increment cron counter",
+        )
+
+    return data[0]
 
 
 @router.get("/table-settings", response_model=list[TableSettingResponse])

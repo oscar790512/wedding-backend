@@ -15,6 +15,7 @@ GuestCategory = Literal[
     "女方朋友",
     "男方家人",
     "女方家人",
+    "長輩朋友",
 ]
 InvitationStatus = Literal[
     "not_required", "pending_address", "pending_send", "sent", "received"
@@ -425,3 +426,20 @@ class AdminSummary(BaseModel):
     invitation_pending_count: int = 0
     cake_pending_count: int = 0
     unassigned_table_count: int = 0
+
+
+class CronCounterIncrement(BaseModel):
+    counter_key: str = Field(default="github_cron", min_length=1, max_length=100)
+    amount: int = Field(default=1, ge=1, le=100)
+
+    @field_validator("counter_key")
+    @classmethod
+    def strip_counter_key(cls, value: str) -> str:
+        return value.strip()
+
+
+class CronCounterResponse(BaseModel):
+    counter_key: str
+    count: int
+    created_at: str | None = None
+    updated_at: str | None = None
