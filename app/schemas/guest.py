@@ -13,9 +13,15 @@ GuestCategory = Literal[
     "女方同事",
     "男方朋友",
     "女方朋友",
+    "長輩朋友",
+    "男方同事/長官",
+    "女方同事/長官",
+    "男方朋友/同學",
+    "女方朋友/同學",
     "男方家人",
     "女方家人",
-    "長輩朋友",
+    "男方長輩朋友",
+    "女方長輩朋友",
 ]
 InvitationStatus = Literal[
     "not_required", "pending_address", "pending_send", "sent", "received"
