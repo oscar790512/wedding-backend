@@ -82,6 +82,12 @@ class FakeQuery:
         self.payload = payload
         return self
 
+    def upsert(self, payload, on_conflict=None):
+        self.operation = "upsert"
+        self.payload = payload
+        self.supabase.upsert_conflict = on_conflict
+        return self
+
     def eq(self, field, value):
         self.filters.append(("eq", field, value))
         return self
@@ -113,6 +119,9 @@ class FakeQuery:
                 **deepcopy(self.payload),
             }
             return SimpleNamespace(data=[merged])
+        if self.operation == "upsert":
+            self.supabase.upserted_payload = deepcopy(self.payload)
+            return SimpleNamespace(data=[deepcopy(self.payload)])
         raise AssertionError(f"Unhandled fake operation: {self.operation}")
 
 
@@ -123,6 +132,8 @@ class FakeSupabase:
         self.table_data = table_data or {}
         self.inserted_payload = None
         self.updated_payload = None
+        self.upserted_payload = None
+        self.upsert_conflict = None
 
     def table(self, table_name):
         return FakeQuery(self, table_name)
@@ -196,6 +207,43 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         )
         self.assertIsNone(fake_supabase.inserted_payload)
         self.assertIsNone(fake_supabase.updated_payload)
+
+    def test_public_rsvp_settings_returns_configured_deadline(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "wedding_settings": [
+                    {
+                        "id": 1,
+                        "rsvp_deadline": "2026-10-04",
+                        "updated_at": "2026-07-17T00:00:00+00:00",
+                    },
+                ],
+            },
+        )
+
+        with patch("app.routers.rsvp.get_supabase", return_value=fake_supabase):
+            response = self.client.get("/api/rsvp/settings")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["rsvp_deadline"], "2026-10-04")
+
+    def test_admin_can_update_rsvp_deadline(self):
+        fake_supabase = FakeSupabase()
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.put(
+                "/api/admin/settings/rsvp",
+                json={"rsvp_deadline": "2026-10-04"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["rsvp_deadline"], "2026-10-04")
+        self.assertEqual(fake_supabase.upserted_payload["id"], 1)
+        self.assertEqual(
+            fake_supabase.upserted_payload["rsvp_deadline"],
+            "2026-10-04",
+        )
+        self.assertEqual(fake_supabase.upsert_conflict, "id")
 
     def test_checkin_update_marks_attending_guest_arrived(self):
         existing = guest_record(status="attend", arrived_at=None)

@@ -22,6 +22,7 @@ from app.schemas.guest import (
     TableSettingResponse,
     TableSettingUpsert,
 )
+from app.schemas.settings import RsvpSettingsResponse, RsvpSettingsUpdate
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -42,6 +43,49 @@ def _generate_checkin_token() -> str:
 
 def _create_unique_checkin_token() -> str:
     return _generate_checkin_token()
+
+
+@router.get("/settings/rsvp", response_model=RsvpSettingsResponse)
+def get_admin_rsvp_settings(
+    _admin: dict = Depends(get_current_admin),
+) -> RsvpSettingsResponse:
+    response = (
+        get_supabase()
+        .table("wedding_settings")
+        .select("rsvp_deadline,updated_at")
+        .eq("id", 1)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        return RsvpSettingsResponse()
+    return RsvpSettingsResponse.model_validate(response.data[0])
+
+
+@router.put("/settings/rsvp", response_model=RsvpSettingsResponse)
+def update_admin_rsvp_settings(
+    payload: RsvpSettingsUpdate,
+    _admin: dict = Depends(get_current_admin),
+) -> RsvpSettingsResponse:
+    data = {
+        "id": 1,
+        "rsvp_deadline": payload.rsvp_deadline.isoformat()
+        if payload.rsvp_deadline
+        else None,
+        "updated_at": _utc_now(),
+    }
+    response = (
+        get_supabase()
+        .table("wedding_settings")
+        .upsert(data, on_conflict="id")
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save RSVP settings",
+        )
+    return RsvpSettingsResponse.model_validate(response.data[0])
 
 
 def _active_guests_query():

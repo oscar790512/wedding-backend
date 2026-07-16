@@ -5,8 +5,24 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.database import get_supabase
 from app.schemas.guest import GuestResponse, RsvpRequest
+from app.schemas.settings import RsvpSettingsResponse
 
 router = APIRouter(tags=["rsvp"])
+
+
+@router.get("/rsvp/settings", response_model=RsvpSettingsResponse)
+def get_rsvp_settings() -> RsvpSettingsResponse:
+    response = (
+        get_supabase()
+        .table("wedding_settings")
+        .select("rsvp_deadline,updated_at")
+        .eq("id", 1)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        return RsvpSettingsResponse()
+    return RsvpSettingsResponse.model_validate(response.data[0])
 
 
 def _generate_checkin_token() -> str:

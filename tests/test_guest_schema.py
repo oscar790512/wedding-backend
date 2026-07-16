@@ -26,6 +26,8 @@ class RsvpRequestSchemaTest(unittest.TestCase):
         self.assertEqual(payload.phone, "0912345678")
         self.assertEqual(payload.email, "oscar@example.com")
         self.assertEqual(payload.invitation_address, "Taipei City")
+        self.assertIsNone(payload.allergy_notes)
+        self.assertEqual(payload.diet_notes, "peanut；less spicy")
         self.assertEqual(payload.vegetarian_adults, 2)
         self.assertEqual(payload.vegetarian_children, 0)
         self.assertEqual(payload.cake_status, "pending_pickup")
@@ -102,6 +104,17 @@ class RsvpRequestSchemaTest(unittest.TestCase):
             )
 
         self.assertIn("素食人數不可超過總出席人數", str(context.exception))
+
+    def test_other_guest_category_is_allowed(self):
+        payload = RsvpRequest(
+            name="Guest",
+            phone="0912345678",
+            status="attend",
+            total_adults=1,
+            guest_category="女方其他",
+        )
+
+        self.assertEqual(payload.guest_category, "女方其他")
 
 
 if __name__ == "__main__":

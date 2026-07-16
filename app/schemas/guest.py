@@ -22,6 +22,8 @@ GuestCategory = Literal[
     "女方家人",
     "男方長輩朋友",
     "女方長輩朋友",
+    "男方其他",
+    "女方其他",
 ]
 InvitationStatus = Literal[
     "not_required", "pending_address", "pending_send", "sent", "received"
@@ -126,6 +128,16 @@ class GuestBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_guest_fields(self) -> "GuestBase":
+        dietary_notes = []
+        for note in (self.allergy_notes, self.diet_notes):
+            if note and note not in dietary_notes:
+                dietary_notes.append(note)
+        combined_dietary_notes = "；".join(dietary_notes) or None
+        if combined_dietary_notes and len(combined_dietary_notes) > 500:
+            raise ValueError("過敏／特殊飲食備註不可超過 500 字")
+        self.diet_notes = combined_dietary_notes
+        self.allergy_notes = None
+
         if self.status == "attend" and self.total_adults < 1:
             raise ValueError("Attending guests must include at least one adult")
 
