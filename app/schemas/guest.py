@@ -221,10 +221,7 @@ class RsvpRequest(GuestBase):
             if data.get("status") == "attend"
             else "not_required"
         )
-        if data.get("decline_response") == "request_cake":
-            data["shipping_recipient"] = data.get("shipping_recipient") or data.get("name")
-            data["shipping_phone"] = data.get("shipping_phone") or data.get("phone")
-        else:
+        if data.get("decline_response") != "request_cake":
             data["shipping_address"] = None
             data["shipping_recipient"] = None
             data["shipping_phone"] = None
