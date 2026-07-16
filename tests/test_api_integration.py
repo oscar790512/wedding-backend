@@ -222,6 +222,46 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         self.assertIn("arrived_at", fake_supabase.updated_payload)
         self.assertIn("checkin_updated_at", fake_supabase.updated_payload)
 
+    def test_checkin_update_allows_arrival_when_existing_table_is_over_capacity(self):
+        existing = guest_record(
+            id=GUEST_ID,
+            name="Existing Guest",
+            total_adults=2,
+            total_children=0,
+            allocated_table="第 1 桌",
+            arrived_at=None,
+        )
+        seated_guest = guest_record(
+            id="00000000-0000-4000-8000-000000000002",
+            name="Already Seated",
+            total_adults=11,
+            total_children=0,
+            allocated_table="第 1 桌",
+        )
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [existing, seated_guest],
+                "table_settings": [
+                    {"table_name": "第 1 桌", "capacity": 12},
+                ],
+            },
+            update_base=existing,
+        )
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.patch(
+                f"/api/admin/guests/{GUEST_ID}/checkin",
+                json={
+                    "is_arrived": True,
+                    "actual_adults": 2,
+                    "actual_children": 0,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(fake_supabase.updated_payload["is_arrived"])
+        self.assertEqual(fake_supabase.updated_payload["actual_adults"], 2)
+
     def test_checkin_update_clears_actual_counts_when_arrival_is_cancelled(self):
         existing = guest_record(
             status="attend",

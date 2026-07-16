@@ -520,12 +520,16 @@ def update_guest_checkin(
         **existing,
         **updates,
     }
-    _ensure_table_capacity(
-        get_supabase(),
-        guest_id,
-        merged,
-        merged.get("allocated_table"),
-    )
+    if (
+        "allocated_table" in updates
+        and updates.get("allocated_table") != existing.get("allocated_table")
+    ):
+        _ensure_table_capacity(
+            get_supabase(),
+            guest_id,
+            merged,
+            merged.get("allocated_table"),
+        )
 
     updates["checkin_updated_at"] = now
     updates["updated_at"] = now
