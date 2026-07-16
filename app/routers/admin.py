@@ -99,6 +99,65 @@ def _load_guest_by_checkin_token_or_404(token: str) -> dict:
     return response.data[0]
 
 
+def _guest_attendee_count(guest: dict) -> int:
+    actual_adults = (
+        guest.get("actual_adults")
+        if guest.get("actual_adults") is not None
+        else guest.get("total_adults")
+    )
+    actual_children = (
+        guest.get("actual_children")
+        if guest.get("actual_children") is not None
+        else guest.get("total_children")
+    )
+    return int(actual_adults or 0) + int(actual_children or 0)
+
+
+def _ensure_table_capacity(
+    supabase,
+    guest_id: str,
+    guest: dict,
+    table_name: str | None,
+) -> None:
+    if not table_name or guest.get("status") != "attend":
+        return
+
+    setting_response = (
+        supabase.table("table_settings")
+        .select("table_name,capacity")
+        .eq("table_name", table_name)
+        .limit(1)
+        .execute()
+    )
+    if not setting_response.data:
+        return
+
+    capacity = int(setting_response.data[0].get("capacity") or 0)
+    response = (
+        supabase.table("guests")
+        .select("id,status,total_adults,total_children,actual_adults,actual_children")
+        .eq("allocated_table", table_name)
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    seated_count = sum(
+        _guest_attendee_count(seated_guest)
+        for seated_guest in response.data or []
+        if seated_guest.get("status") == "attend" and seated_guest.get("id") != guest_id
+    )
+    requested_count = _guest_attendee_count(guest)
+
+    if seated_count + requested_count > capacity:
+        remaining = max(capacity - seated_count, 0)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"{table_name} 剩餘 {remaining} 位，"
+                f"無法安排 {guest.get('name') or '此賓客'}（{requested_count} 位）。"
+            ),
+        )
+
+
 @router.post("/cron-counter/increment", response_model=CronCounterResponse)
 def increment_cron_counter(
     payload: CronCounterIncrement,
@@ -465,6 +524,17 @@ def update_guest_checkin(
         else:
             updates["arrived_at"] = None
 
+    merged = {
+        **existing,
+        **updates,
+    }
+    _ensure_table_capacity(
+        get_supabase(),
+        guest_id,
+        merged,
+        merged.get("allocated_table"),
+    )
+
     updates["checkin_updated_at"] = now
     updates["updated_at"] = now
 
@@ -504,6 +574,12 @@ def update_guest(
     }
     validated = AdminGuestCreate.model_validate(merged)
     updates = validated.model_dump(mode="json")
+    _ensure_table_capacity(
+        get_supabase(),
+        guest_id,
+        updates,
+        updates.get("allocated_table"),
+    )
     updates["updated_at"] = _utc_now()
     if (
         updates.get("status") == "attend"
