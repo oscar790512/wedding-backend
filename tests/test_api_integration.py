@@ -222,6 +222,32 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         self.assertIn("arrived_at", fake_supabase.updated_payload)
         self.assertIn("checkin_updated_at", fake_supabase.updated_payload)
 
+    def test_checkin_update_clears_actual_counts_when_arrival_is_cancelled(self):
+        existing = guest_record(
+            status="attend",
+            is_arrived=True,
+            arrived_at="2026-07-17T12:00:00+00:00",
+            actual_adults=2,
+            actual_children=1,
+        )
+        fake_supabase = FakeSupabase(select_data=[existing], update_base=existing)
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.patch(
+                f"/api/admin/guests/{GUEST_ID}/checkin",
+                json={
+                    "is_arrived": False,
+                    "actual_adults": 0,
+                    "actual_children": 0,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(fake_supabase.updated_payload["is_arrived"])
+        self.assertIsNone(fake_supabase.updated_payload["arrived_at"])
+        self.assertIsNone(fake_supabase.updated_payload["actual_adults"])
+        self.assertIsNone(fake_supabase.updated_payload["actual_children"])
+
     def test_checkin_update_rejects_table_assignment_when_capacity_would_be_exceeded(self):
         target_guest = guest_record(
             id=GUEST_ID,
@@ -331,6 +357,48 @@ class WeddingApiIntegrationTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(fake_supabase.updated_payload["allocated_table"], "第 1 桌")
+
+    def test_guest_update_uses_planned_counts_not_actual_counts_for_capacity(self):
+        target_guest = guest_record(
+            id=GUEST_ID,
+            name="Planned Four Seat Guest",
+            total_adults=4,
+            total_children=0,
+            actual_adults=1,
+            actual_children=0,
+            allocated_table=None,
+        )
+        seated_guest = guest_record(
+            id="00000000-0000-4000-8000-000000000002",
+            name="Already Seated",
+            total_adults=9,
+            total_children=0,
+            actual_adults=9,
+            actual_children=0,
+            allocated_table="第 1 桌",
+        )
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [target_guest, seated_guest],
+                "table_settings": [
+                    {"table_name": "第 1 桌", "capacity": 12},
+                ],
+            },
+            update_base=target_guest,
+        )
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.patch(
+                f"/api/admin/guests/{GUEST_ID}",
+                json={"allocated_table": "第 1 桌"},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["detail"],
+            "第 1 桌 剩餘 3 位，無法安排 Planned Four Seat Guest（4 位）。",
+        )
+        self.assertIsNone(fake_supabase.updated_payload)
 
     def test_checkin_update_rejects_declined_guest_arrival(self):
         existing = guest_record(status="decline", decline_response="blessing_only")

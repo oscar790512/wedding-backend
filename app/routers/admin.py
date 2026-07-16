@@ -99,18 +99,8 @@ def _load_guest_by_checkin_token_or_404(token: str) -> dict:
     return response.data[0]
 
 
-def _guest_attendee_count(guest: dict) -> int:
-    actual_adults = (
-        guest.get("actual_adults")
-        if guest.get("actual_adults") is not None
-        else guest.get("total_adults")
-    )
-    actual_children = (
-        guest.get("actual_children")
-        if guest.get("actual_children") is not None
-        else guest.get("total_children")
-    )
-    return int(actual_adults or 0) + int(actual_children or 0)
+def _guest_planned_seat_count(guest: dict) -> int:
+    return int(guest.get("total_adults") or 0) + int(guest.get("total_children") or 0)
 
 
 def _ensure_table_capacity(
@@ -135,17 +125,17 @@ def _ensure_table_capacity(
     capacity = int(setting_response.data[0].get("capacity") or 0)
     response = (
         supabase.table("guests")
-        .select("id,status,total_adults,total_children,actual_adults,actual_children")
+        .select("id,status,total_adults,total_children")
         .eq("allocated_table", table_name)
         .is_("deleted_at", "null")
         .execute()
     )
     seated_count = sum(
-        _guest_attendee_count(seated_guest)
+        _guest_planned_seat_count(seated_guest)
         for seated_guest in response.data or []
         if seated_guest.get("status") == "attend" and seated_guest.get("id") != guest_id
     )
-    requested_count = _guest_attendee_count(guest)
+    requested_count = _guest_planned_seat_count(guest)
 
     if seated_count + requested_count > capacity:
         remaining = max(capacity - seated_count, 0)
@@ -523,6 +513,8 @@ def update_guest_checkin(
             updates["arrived_at"] = existing.get("arrived_at") or now
         else:
             updates["arrived_at"] = None
+            updates["actual_adults"] = None
+            updates["actual_children"] = None
 
     merged = {
         **existing,
