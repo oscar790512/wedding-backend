@@ -257,7 +257,8 @@ class WeddingApiIntegrationTest(unittest.TestCase):
                     "actual_adults": 2,
                     "actual_children": 1,
                     "checkin_note": "  front desk  ",
-                    "admin_notes": "should not be accepted here",
+                    "gift_amount": "3600",
+                    "admin_notes": "  received by front desk  ",
                 },
             )
 
@@ -266,7 +267,8 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         self.assertEqual(fake_supabase.updated_payload["actual_adults"], 2)
         self.assertEqual(fake_supabase.updated_payload["actual_children"], 1)
         self.assertEqual(fake_supabase.updated_payload["checkin_note"], "front desk")
-        self.assertNotIn("admin_notes", fake_supabase.updated_payload)
+        self.assertEqual(fake_supabase.updated_payload["gift_amount"], "3600")
+        self.assertEqual(fake_supabase.updated_payload["admin_notes"], "received by front desk")
         self.assertIn("arrived_at", fake_supabase.updated_payload)
         self.assertIn("checkin_updated_at", fake_supabase.updated_payload)
 

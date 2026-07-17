@@ -384,9 +384,11 @@ class GuestCheckinUpdate(AdminGuestUpdate):
     actual_children: int | None = Field(default=None, ge=0)
     cake_status: CakeStatus | None = None
     checkin_note: str | None = Field(default=None, max_length=500)
+    gift_amount: Decimal | None = Field(default=None, ge=0)
     allocated_table: str | None = Field(default=None, max_length=100)
+    admin_notes: str | None = Field(default=None, max_length=1000)
 
-    @field_validator("checkin_note", "allocated_table")
+    @field_validator("checkin_note", "allocated_table", "admin_notes")
     @classmethod
     def strip_checkin_text(cls, value: str | None) -> str | None:
         if value is None:

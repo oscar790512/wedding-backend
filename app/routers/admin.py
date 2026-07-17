@@ -535,7 +535,9 @@ def update_guest_checkin(
         "actual_children",
         "cake_status",
         "checkin_note",
+        "gift_amount",
         "allocated_table",
+        "admin_notes",
     }
     updates = {key: value for key, value in updates.items() if key in allowed_fields}
     if not updates:
