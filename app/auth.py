@@ -26,13 +26,14 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
     )
 
 
-def create_access_token(username: str, role: str) -> str:
+def create_access_token(username: str, role: str, token_version: int) -> str:
     expire = datetime.now(UTC) + timedelta(
         minutes=settings.jwt_expire_minutes,
     )
     payload = {
         "sub": username,
         "role": role,
+        "ver": token_version,
         "exp": expire,
     }
     return jwt.encode(
@@ -43,22 +44,42 @@ def create_access_token(username: str, role: str) -> str:
 
 
 def authenticate_admin(username: str, password: str) -> dict | None:
-    response = (
+    normalized_username = username.strip().lower()
+    query = (
         get_supabase()
         .table("admin_users")
-        .select("username, password_hash, role")
-        .eq("username", username)
-        .limit(1)
-        .execute()
+        .select(
+            "username,display_name,password_hash,role,is_active,token_version",
+        )
     )
+    response = query.eq("username", normalized_username).limit(1).execute()
+    if not response.data and username != normalized_username:
+        response = (
+            get_supabase()
+            .table("admin_users")
+            .select(
+                "username,display_name,password_hash,role,is_active,token_version",
+            )
+            .eq("username", username)
+            .limit(1)
+            .execute()
+        )
     if not response.data:
         return None
 
     user = response.data[0]
-    if not verify_password(password, user["password_hash"]):
+    if not user["is_active"] or not verify_password(
+        password,
+        user["password_hash"],
+    ):
         return None
 
-    return {"username": user["username"], "role": user["role"]}
+    return {
+        "username": user["username"],
+        "display_name": user["display_name"],
+        "role": user["role"],
+        "token_version": user["token_version"],
+    }
 
 
 def get_current_admin(
@@ -78,9 +99,43 @@ def get_current_admin(
         )
         username = payload.get("sub")
         role = payload.get("role")
-        if not username or not role:
+        token_version = payload.get("ver")
+        if not username or not role or not isinstance(token_version, int):
             raise credentials_exception
     except JWTError as exc:
         raise credentials_exception from exc
 
-    return {"username": username, "role": role}
+    response = (
+        get_supabase()
+        .table("admin_users")
+        .select("username,display_name,role,is_active,token_version")
+        .eq("username", username)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        raise credentials_exception
+
+    user = response.data[0]
+    if (
+        not user["is_active"]
+        or user["role"] != role
+        or user["token_version"] != token_version
+    ):
+        raise credentials_exception
+
+    return {
+        "username": user["username"],
+        "display_name": user["display_name"],
+        "role": user["role"],
+        "token_version": user["token_version"],
+    }
+
+
+def require_admin(current_user: dict = Depends(get_current_admin)) -> dict:
+    if current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要管理員權限",
+        )
+    return current_user

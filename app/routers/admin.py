@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
-from app.auth import get_current_admin
+from app.auth import get_current_admin, hash_password, require_admin
 from app.config import settings
 from app.database import get_supabase
 from app.schemas.guest import (
@@ -23,6 +23,15 @@ from app.schemas.guest import (
     TableSettingUpsert,
 )
 from app.schemas.settings import RsvpSettingsResponse, RsvpSettingsUpdate
+from app.schemas.staff_user import (
+    StaffAuditLogResponse,
+    StaffDisplayNameUpdate,
+    StaffPasswordReset,
+    StaffStatusUpdate,
+    StaffUserCreate,
+    StaffUserResponse,
+    normalize_username,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -45,9 +54,273 @@ def _create_unique_checkin_token() -> str:
     return _generate_checkin_token()
 
 
+def _normalized_path_username(username: str) -> str:
+    try:
+        return normalize_username(username)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+def _load_staff_or_404(supabase, username: str) -> dict:
+    response = (
+        supabase.table("admin_users")
+        .select(
+            "username,display_name,role,is_active,token_version,created_at,updated_at",
+        )
+        .eq("username", username)
+        .eq("role", "staff")
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="找不到工作人員帳號",
+        )
+    return response.data[0]
+
+
+def _record_staff_audit(
+    supabase,
+    actor_username: str,
+    target_username: str,
+    action: str,
+) -> None:
+    response = (
+        supabase.table("admin_user_audit_logs")
+        .insert(
+            {
+                "actor_username": actor_username,
+                "target_username": target_username,
+                "action": action,
+                "created_at": _utc_now(),
+            }
+        )
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to record staff account audit log",
+        )
+
+
+@router.get("/staff-users", response_model=list[StaffUserResponse])
+def list_staff_users(
+    _admin: dict = Depends(require_admin),
+) -> list[StaffUserResponse]:
+    response = (
+        get_supabase()
+        .table("admin_users")
+        .select("username,display_name,role,is_active,created_at,updated_at")
+        .eq("role", "staff")
+        .order("username")
+        .execute()
+    )
+    return response.data or []
+
+
+@router.post(
+    "/staff-users",
+    response_model=StaffUserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_staff_user(
+    payload: StaffUserCreate,
+    admin: dict = Depends(require_admin),
+) -> StaffUserResponse:
+    supabase = get_supabase()
+    existing = (
+        supabase.table("admin_users")
+        .select("username")
+        .eq("username", payload.username)
+        .limit(1)
+        .execute()
+    )
+    if existing.data:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="工作人員帳號已存在",
+        )
+
+    now = _utc_now()
+    response = (
+        supabase.table("admin_users")
+        .insert(
+            {
+                "username": payload.username,
+                "display_name": payload.display_name,
+                "password_hash": hash_password(payload.password),
+                "role": "staff",
+                "is_active": True,
+                "token_version": 1,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create staff account",
+        )
+
+    _record_staff_audit(
+        supabase,
+        admin["username"],
+        payload.username,
+        "created",
+    )
+    return response.data[0]
+
+
+@router.patch(
+    "/staff-users/{username}/display-name",
+    response_model=StaffUserResponse,
+)
+def update_staff_display_name(
+    username: str,
+    payload: StaffDisplayNameUpdate,
+    admin: dict = Depends(require_admin),
+) -> StaffUserResponse:
+    normalized_username = _normalized_path_username(username)
+    supabase = get_supabase()
+    _load_staff_or_404(supabase, normalized_username)
+    response = (
+        supabase.table("admin_users")
+        .update(
+            {
+                "display_name": payload.display_name,
+                "updated_at": _utc_now(),
+            }
+        )
+        .eq("username", normalized_username)
+        .eq("role", "staff")
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="找不到工作人員帳號",
+        )
+
+    _record_staff_audit(
+        supabase,
+        admin["username"],
+        normalized_username,
+        "display_name_updated",
+    )
+    return response.data[0]
+
+
+@router.post(
+    "/staff-users/{username}/password",
+    response_model=StaffUserResponse,
+)
+def reset_staff_password(
+    username: str,
+    payload: StaffPasswordReset,
+    admin: dict = Depends(require_admin),
+) -> StaffUserResponse:
+    normalized_username = _normalized_path_username(username)
+    supabase = get_supabase()
+    staff_user = _load_staff_or_404(supabase, normalized_username)
+    response = (
+        supabase.table("admin_users")
+        .update(
+            {
+                "password_hash": hash_password(payload.password),
+                "token_version": staff_user["token_version"] + 1,
+                "updated_at": _utc_now(),
+            }
+        )
+        .eq("username", normalized_username)
+        .eq("role", "staff")
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="找不到工作人員帳號",
+        )
+
+    _record_staff_audit(
+        supabase,
+        admin["username"],
+        normalized_username,
+        "password_reset",
+    )
+    return response.data[0]
+
+
+@router.patch(
+    "/staff-users/{username}/status",
+    response_model=StaffUserResponse,
+)
+def update_staff_status(
+    username: str,
+    payload: StaffStatusUpdate,
+    admin: dict = Depends(require_admin),
+) -> StaffUserResponse:
+    normalized_username = _normalized_path_username(username)
+    supabase = get_supabase()
+    staff_user = _load_staff_or_404(supabase, normalized_username)
+    if staff_user["is_active"] == payload.is_active:
+        return staff_user
+
+    response = (
+        supabase.table("admin_users")
+        .update(
+            {
+                "is_active": payload.is_active,
+                "token_version": staff_user["token_version"] + 1,
+                "updated_at": _utc_now(),
+            }
+        )
+        .eq("username", normalized_username)
+        .eq("role", "staff")
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="找不到工作人員帳號",
+        )
+
+    _record_staff_audit(
+        supabase,
+        admin["username"],
+        normalized_username,
+        "reactivated" if payload.is_active else "deactivated",
+    )
+    return response.data[0]
+
+
+@router.get(
+    "/staff-user-audit-logs",
+    response_model=list[StaffAuditLogResponse],
+)
+def list_staff_user_audit_logs(
+    _admin: dict = Depends(require_admin),
+) -> list[StaffAuditLogResponse]:
+    response = (
+        get_supabase()
+        .table("admin_user_audit_logs")
+        .select("actor_username,target_username,action,created_at")
+        .order("created_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+    return response.data or []
+
+
 @router.get("/settings/rsvp", response_model=RsvpSettingsResponse)
 def get_admin_rsvp_settings(
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_admin),
 ) -> RsvpSettingsResponse:
     response = (
         get_supabase()
@@ -65,7 +338,7 @@ def get_admin_rsvp_settings(
 @router.put("/settings/rsvp", response_model=RsvpSettingsResponse)
 def update_admin_rsvp_settings(
     payload: RsvpSettingsUpdate,
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_admin),
 ) -> RsvpSettingsResponse:
     data = {
         "id": 1,

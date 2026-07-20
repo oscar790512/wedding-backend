@@ -16,21 +16,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Create a wedding admin user")
     parser.add_argument("username")
     parser.add_argument("password")
+    parser.add_argument("--display-name")
     parser.add_argument(
         "--role",
         choices=["admin", "staff"],
         default="admin",
     )
     args = parser.parse_args()
+    username = args.username.strip().lower()
 
     response = (
         get_supabase()
         .table("admin_users")
         .insert(
             {
-                "username": args.username,
+                "username": username,
+                "display_name": (args.display_name or username).strip(),
                 "password_hash": hash_password(args.password),
                 "role": args.role,
+                "is_active": True,
+                "token_version": 1,
             }
         )
         .execute()
