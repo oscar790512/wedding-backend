@@ -7,7 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from app.config import settings
-from app.database import get_supabase
+from app.database import execute_read, get_supabase
 
 security = HTTPBearer()
 
@@ -52,9 +52,9 @@ def authenticate_admin(username: str, password: str) -> dict | None:
             "username,display_name,password_hash,role,is_active,token_version",
         )
     )
-    response = query.eq("username", normalized_username).limit(1).execute()
+    response = execute_read(query.eq("username", normalized_username).limit(1))
     if not response.data and username != normalized_username:
-        response = (
+        response = execute_read(
             get_supabase()
             .table("admin_users")
             .select(
@@ -62,7 +62,6 @@ def authenticate_admin(username: str, password: str) -> dict | None:
             )
             .eq("username", username)
             .limit(1)
-            .execute()
         )
     if not response.data:
         return None
@@ -105,13 +104,12 @@ def get_current_admin(
     except JWTError as exc:
         raise credentials_exception from exc
 
-    response = (
+    response = execute_read(
         get_supabase()
         .table("admin_users")
         .select("username,display_name,role,is_active,token_version")
         .eq("username", username)
         .limit(1)
-        .execute()
     )
     if not response.data:
         raise credentials_exception

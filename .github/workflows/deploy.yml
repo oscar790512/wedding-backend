@@ -1,4 +1,4 @@
-name: Verify Backend
+name: Deploy Backend
 
 on:
   push:
@@ -32,3 +32,13 @@ jobs:
 
       - name: Confirm Northflank staging deploy is handled by Git integration
         run: echo "Northflank deploys the main branch through its Git integration."
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    needs: verify-staging
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Trigger Render production deploy hook
+        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"

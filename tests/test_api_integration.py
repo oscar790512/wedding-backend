@@ -5,6 +5,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
 from fastapi.testclient import TestClient
 
 from app.auth import get_current_admin
@@ -99,8 +100,14 @@ class FakeQuery:
     def limit(self, *_args):
         return self
 
+    def order(self, *_args, **_kwargs):
+        return self
+
     def execute(self):
         if self.operation == "select":
+            self.supabase.select_execute_calls += 1
+            if self.supabase.select_errors:
+                raise self.supabase.select_errors.pop(0)
             data = deepcopy(self.supabase.table_data.get(self.table_name, self.supabase.select_data))
             for operation, field, value in self.filters:
                 if operation == "eq":
@@ -126,10 +133,18 @@ class FakeQuery:
 
 
 class FakeSupabase:
-    def __init__(self, select_data=None, update_base=None, table_data=None):
+    def __init__(
+        self,
+        select_data=None,
+        update_base=None,
+        table_data=None,
+        select_errors=None,
+    ):
         self.select_data = select_data or []
         self.update_base = update_base or {}
         self.table_data = table_data or {}
+        self.select_errors = list(select_errors or [])
+        self.select_execute_calls = 0
         self.inserted_payload = None
         self.updated_payload = None
         self.upserted_payload = None
@@ -226,6 +241,33 @@ class WeddingApiIntegrationTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["rsvp_deadline"], "2026-10-04")
+
+    def test_admin_guest_list_retries_transient_supabase_read_errors(self):
+        request = httpx.Request(
+            "GET",
+            "https://example.supabase.co/rest/v1/guests",
+        )
+        fake_supabase = FakeSupabase(
+            select_data=[guest_record()],
+            select_errors=[
+                httpx.ReadError("temporarily unavailable", request=request),
+                httpx.ReadError("temporarily unavailable", request=request),
+            ],
+        )
+
+        with (
+            patch("app.routers.admin.get_supabase", return_value=fake_supabase),
+            patch("app.database.time.sleep") as sleep,
+        ):
+            response = self.client.get("/api/admin/guests")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["id"], GUEST_ID)
+        self.assertEqual(fake_supabase.select_execute_calls, 3)
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list],
+            [0.1, 0.2],
+        )
 
     def test_admin_can_update_rsvp_deadline(self):
         fake_supabase = FakeSupabase()

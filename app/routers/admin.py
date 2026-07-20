@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.auth import get_current_admin, hash_password, require_admin
 from app.config import settings
-from app.database import get_supabase
+from app.database import execute_read, get_supabase
 from app.schemas.guest import (
     AdminGuestCreate,
     AdminGuestUpdate,
@@ -65,7 +65,7 @@ def _normalized_path_username(username: str) -> str:
 
 
 def _load_staff_or_404(supabase, username: str) -> dict:
-    response = (
+    response = execute_read(
         supabase.table("admin_users")
         .select(
             "username,display_name,role,is_active,token_version,created_at,updated_at",
@@ -73,7 +73,6 @@ def _load_staff_or_404(supabase, username: str) -> dict:
         .eq("username", username)
         .eq("role", "staff")
         .limit(1)
-        .execute()
     )
     if not response.data:
         raise HTTPException(
@@ -112,13 +111,12 @@ def _record_staff_audit(
 def list_staff_users(
     _admin: dict = Depends(require_admin),
 ) -> list[StaffUserResponse]:
-    response = (
+    response = execute_read(
         get_supabase()
         .table("admin_users")
         .select("username,display_name,role,is_active,created_at,updated_at")
         .eq("role", "staff")
         .order("username")
-        .execute()
     )
     return response.data or []
 
@@ -133,12 +131,11 @@ def create_staff_user(
     admin: dict = Depends(require_admin),
 ) -> StaffUserResponse:
     supabase = get_supabase()
-    existing = (
+    existing = execute_read(
         supabase.table("admin_users")
         .select("username")
         .eq("username", payload.username)
         .limit(1)
-        .execute()
     )
     if existing.data:
         raise HTTPException(
@@ -307,13 +304,12 @@ def update_staff_status(
 def list_staff_user_audit_logs(
     _admin: dict = Depends(require_admin),
 ) -> list[StaffAuditLogResponse]:
-    response = (
+    response = execute_read(
         get_supabase()
         .table("admin_user_audit_logs")
         .select("actor_username,target_username,action,created_at")
         .order("created_at", desc=True)
         .limit(20)
-        .execute()
     )
     return response.data or []
 
@@ -322,13 +318,12 @@ def list_staff_user_audit_logs(
 def get_admin_rsvp_settings(
     _admin: dict = Depends(require_admin),
 ) -> RsvpSettingsResponse:
-    response = (
+    response = execute_read(
         get_supabase()
         .table("wedding_settings")
         .select("rsvp_deadline,updated_at")
         .eq("id", 1)
         .limit(1)
-        .execute()
     )
     if not response.data:
         return RsvpSettingsResponse()
@@ -381,14 +376,13 @@ def _verify_cron_counter_secret(secret: str | None) -> None:
 
 
 def _load_guest_or_404(guest_id: str) -> dict:
-    response = (
+    response = execute_read(
         get_supabase()
         .table("guests")
         .select("*")
         .eq("id", guest_id)
         .is_("deleted_at", "null")
         .limit(1)
-        .execute()
     )
     if not response.data:
         raise HTTPException(
@@ -399,14 +393,13 @@ def _load_guest_or_404(guest_id: str) -> dict:
 
 
 def _load_guest_by_checkin_token_or_404(token: str) -> dict:
-    response = (
+    response = execute_read(
         get_supabase()
         .table("guests")
         .select("*")
         .eq("checkin_token", token)
         .is_("deleted_at", "null")
         .limit(1)
-        .execute()
     )
     if not response.data:
         raise HTTPException(
@@ -429,23 +422,21 @@ def _ensure_table_capacity(
     if not table_name or guest.get("status") != "attend":
         return
 
-    setting_response = (
+    setting_response = execute_read(
         supabase.table("table_settings")
         .select("table_name,capacity")
         .eq("table_name", table_name)
         .limit(1)
-        .execute()
     )
     if not setting_response.data:
         return
 
     capacity = int(setting_response.data[0].get("capacity") or 0)
-    response = (
+    response = execute_read(
         supabase.table("guests")
         .select("id,status,total_adults,total_children")
         .eq("allocated_table", table_name)
         .is_("deleted_at", "null")
-        .execute()
     )
     seated_count = sum(
         _guest_planned_seat_count(seated_guest)
@@ -493,12 +484,11 @@ def increment_cron_counter(
 def list_table_settings(
     _admin: dict = Depends(get_current_admin),
 ) -> list[TableSettingResponse]:
-    response = (
+    response = execute_read(
         get_supabase()
         .table("table_settings")
         .select("table_name,capacity,created_at,updated_at")
         .order("created_at")
-        .execute()
     )
     return response.data or []
 
@@ -537,13 +527,12 @@ def rename_table_setting(
         )
 
     if payload.old_table_name == payload.new_table_name:
-        response = (
+        response = execute_read(
             get_supabase()
             .table("table_settings")
             .select("table_name,capacity,created_at,updated_at")
             .eq("table_name", payload.old_table_name)
             .limit(1)
-            .execute()
         )
         if response.data:
             return response.data[0]
@@ -553,12 +542,11 @@ def rename_table_setting(
         )
 
     supabase = get_supabase()
-    existing = (
+    existing = execute_read(
         supabase.table("table_settings")
         .select("table_name")
         .eq("table_name", payload.new_table_name)
         .limit(1)
-        .execute()
     )
     if existing.data:
         raise HTTPException(
@@ -567,12 +555,11 @@ def rename_table_setting(
         )
 
     updated_at = _utc_now()
-    current = (
+    current = execute_read(
         supabase.table("table_settings")
         .select("table_name,capacity,created_at,updated_at")
         .eq("table_name", payload.old_table_name)
         .limit(1)
-        .execute()
     )
 
     if not current.data:
@@ -632,7 +619,7 @@ def delete_table_setting(
 
 @router.get("/summary", response_model=AdminSummary)
 def get_summary(_admin: dict = Depends(get_current_admin)) -> AdminSummary:
-    response = _active_guests_query().execute()
+    response = execute_read(_active_guests_query())
     guests = response.data or []
 
     attending = [g for g in guests if g["status"] == "attend"]
@@ -728,7 +715,7 @@ def list_guests(
             "cake_status.in.(pending_address,pending_send)"
         )
 
-    response = query.execute()
+    response = execute_read(query)
     return response.data or []
 
 

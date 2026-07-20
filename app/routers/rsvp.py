@@ -3,7 +3,7 @@ import secrets
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.database import get_supabase
+from app.database import execute_read, get_supabase
 from app.schemas.guest import GuestResponse, RsvpRequest
 from app.schemas.settings import RsvpSettingsResponse
 
@@ -12,13 +12,12 @@ router = APIRouter(tags=["rsvp"])
 
 @router.get("/rsvp/settings", response_model=RsvpSettingsResponse)
 def get_rsvp_settings() -> RsvpSettingsResponse:
-    response = (
+    response = execute_read(
         get_supabase()
         .table("wedding_settings")
         .select("rsvp_deadline,updated_at")
         .eq("id", 1)
         .limit(1)
-        .execute()
     )
     if not response.data:
         return RsvpSettingsResponse()
@@ -45,13 +44,12 @@ def submit_rsvp(payload: RsvpRequest) -> GuestResponse:
     guest_data = payload.model_dump()
     guest_data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    existing = (
+    existing = execute_read(
         supabase.table("guests")
         .select("id,checkin_token")
         .eq("phone", payload.phone)
         .is_("deleted_at", "null")
         .limit(1)
-        .execute()
     )
 
     if existing.data:
