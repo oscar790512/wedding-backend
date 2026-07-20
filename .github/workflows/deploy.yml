@@ -25,6 +25,10 @@ jobs:
 
       - name: Run tests
         run: python -m unittest discover -s tests
+        env:
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
+          JWT_SECRET: test-jwt-secret
 
       - name: Confirm Northflank staging deploy is handled by Git integration
         run: echo "Northflank deploys the main branch through its Git integration."
