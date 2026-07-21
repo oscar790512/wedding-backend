@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.auth import authenticate_admin, create_access_token, get_current_admin
 from app.main import app
+from app.rate_limit import reset_rate_limiters
 
 
 NOW = "2026-07-21T12:00:00+00:00"
@@ -290,6 +291,12 @@ class StaffAccountApiTest(unittest.TestCase):
 
 
 class SessionVersionTest(unittest.TestCase):
+    def setUp(self):
+        reset_rate_limiters()
+
+    def tearDown(self):
+        reset_rate_limiters()
+
     def test_login_response_includes_display_name_and_versioned_token(self):
         client = TestClient(app)
         with patch(
@@ -310,6 +317,29 @@ class SessionVersionTest(unittest.TestCase):
         self.assertEqual(response.json()["display_name"], "怡君")
         self.assertEqual(response.json()["role"], "staff")
         self.assertTrue(response.json()["access_token"])
+
+    def test_login_rate_limit_rejects_repeated_attempts(self):
+        client = TestClient(app)
+
+        with patch("app.routers.auth.authenticate_admin", return_value=None):
+            for _index in range(10):
+                response = client.post(
+                    "/api/auth/login",
+                    json={"username": "frontdesk-1", "password": "wrong"},
+                )
+                self.assertEqual(response.status_code, 401)
+
+            response = client.post(
+                "/api/auth/login",
+                json={"username": "frontdesk-1", "password": "wrong"},
+            )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(
+            response.json()["detail"],
+            "Too many requests. Please try again later.",
+        )
+        self.assertIn("retry-after", response.headers)
 
     def test_login_normalizes_username_and_returns_display_name(self):
         fake_supabase = StaffSupabase(admin_users=[staff_record()])

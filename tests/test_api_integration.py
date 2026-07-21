@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.auth import get_current_admin
 from app.main import app
+from app.rate_limit import reset_rate_limiters
 
 
 GUEST_ID = "00000000-0000-4000-8000-000000000001"
@@ -171,6 +172,7 @@ class FakeSupabase:
 
 class WeddingApiIntegrationTest(unittest.TestCase):
     def setUp(self):
+        reset_rate_limiters()
         app.dependency_overrides[get_current_admin] = lambda: {
             "username": "admin",
             "role": "admin",
@@ -179,6 +181,7 @@ class WeddingApiIntegrationTest(unittest.TestCase):
 
     def tearDown(self):
         app.dependency_overrides.clear()
+        reset_rate_limiters()
 
     def test_rsvp_submit_creates_attending_guest_with_checkin_token(self):
         fake_supabase = FakeSupabase()
@@ -237,6 +240,42 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         )
         self.assertIsNone(fake_supabase.inserted_payload)
         self.assertIsNone(fake_supabase.updated_payload)
+
+    def test_rsvp_rate_limit_rejects_repeated_submissions_for_same_phone(self):
+        fake_supabase = FakeSupabase()
+
+        with (
+            patch("app.routers.rsvp.get_supabase", return_value=fake_supabase),
+            patch("app.routers.rsvp._create_unique_checkin_token", return_value="token-123"),
+        ):
+            for _index in range(5):
+                response = self.client.post(
+                    "/api/rsvp",
+                    json={
+                        "name": "Oscar",
+                        "phone": "0912-345-678",
+                        "status": "attend",
+                        "total_adults": 1,
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+
+            response = self.client.post(
+                "/api/rsvp",
+                json={
+                    "name": "Oscar",
+                    "phone": "0912-345-678",
+                    "status": "attend",
+                    "total_adults": 1,
+                },
+            )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(
+            response.json()["detail"],
+            "Too many requests. Please try again later.",
+        )
+        self.assertIn("retry-after", response.headers)
 
     def test_public_rsvp_settings_returns_configured_deadline(self):
         fake_supabase = FakeSupabase(

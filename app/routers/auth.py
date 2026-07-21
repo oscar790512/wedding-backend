@@ -1,13 +1,16 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.auth import authenticate_admin, create_access_token
+from app.rate_limit import enforce_login_rate_limit
 from app.schemas.auth import LoginRequest, LoginResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(payload: LoginRequest) -> LoginResponse:
+def login(request: Request, payload: LoginRequest) -> LoginResponse:
+    enforce_login_rate_limit(request, payload.username)
+
     user = authenticate_admin(payload.username, payload.password)
     if not user:
         raise HTTPException(

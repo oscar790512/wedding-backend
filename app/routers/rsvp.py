@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 import secrets
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.database import execute_read, get_supabase
+from app.rate_limit import enforce_rsvp_rate_limit
 from app.schemas.guest import GuestResponse, RsvpRequest
 from app.schemas.settings import RsvpSettingsResponse
 
@@ -33,7 +34,9 @@ def _create_unique_checkin_token() -> str:
 
 
 @router.post("/rsvp", response_model=GuestResponse, status_code=status.HTTP_200_OK)
-def submit_rsvp(payload: RsvpRequest) -> GuestResponse:
+def submit_rsvp(request: Request, payload: RsvpRequest) -> GuestResponse:
+    enforce_rsvp_rate_limit(request, payload.phone)
+
     if payload.status == "attend" and payload.total_adults < 1:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
