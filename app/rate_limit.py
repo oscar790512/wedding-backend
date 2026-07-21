@@ -35,8 +35,8 @@ class SlidingWindowRateLimiter:
 
 rsvp_ip_rate_limiter = SlidingWindowRateLimiter(limit=30, window_seconds=60)
 rsvp_phone_rate_limiter = SlidingWindowRateLimiter(limit=5, window_seconds=600)
-login_ip_rate_limiter = SlidingWindowRateLimiter(limit=10, window_seconds=300)
-login_username_rate_limiter = SlidingWindowRateLimiter(limit=10, window_seconds=300)
+login_ip_rate_limiter = SlidingWindowRateLimiter(limit=20, window_seconds=300)
+login_username_rate_limiter = SlidingWindowRateLimiter(limit=20, window_seconds=300)
 
 
 def client_ip(request: Request) -> str:

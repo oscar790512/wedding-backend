@@ -322,7 +322,7 @@ class SessionVersionTest(unittest.TestCase):
         client = TestClient(app)
 
         with patch("app.routers.auth.authenticate_admin", return_value=None):
-            for _index in range(10):
+            for _index in range(20):
                 response = client.post(
                     "/api/auth/login",
                     json={"username": "frontdesk-1", "password": "wrong"},
