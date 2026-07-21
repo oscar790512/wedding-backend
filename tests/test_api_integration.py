@@ -68,9 +68,12 @@ class FakeQuery:
         self.operation = "select"
         self.payload = None
         self.filters = []
+        self.range_args = None
+        self.count = None
 
-    def select(self, *_args):
+    def select(self, *_args, count=None):
         self.operation = "select"
+        self.count = count
         return self
 
     def insert(self, payload):
@@ -103,6 +106,10 @@ class FakeQuery:
     def order(self, *_args, **_kwargs):
         return self
 
+    def range(self, start, end):
+        self.range_args = (start, end)
+        return self
+
     def execute(self):
         if self.operation == "select":
             self.supabase.select_execute_calls += 1
@@ -114,7 +121,13 @@ class FakeQuery:
                     data = [row for row in data if row.get(field) == value]
                 elif operation == "is" and value == "null":
                     data = [row for row in data if row.get(field) is None]
-            return SimpleNamespace(data=data)
+            total = len(data)
+            if self.range_args is not None:
+                start, end = self.range_args
+                data = data[start : end + 1]
+                self.supabase.last_range_args = self.range_args
+            self.supabase.last_select_count = self.count
+            return SimpleNamespace(data=data, count=total)
         if self.operation == "insert":
             self.supabase.inserted_payload = deepcopy(self.payload)
             return SimpleNamespace(data=[guest_record(**self.payload)])
@@ -149,6 +162,8 @@ class FakeSupabase:
         self.updated_payload = None
         self.upserted_payload = None
         self.upsert_conflict = None
+        self.last_range_args = None
+        self.last_select_count = None
 
     def table(self, table_name):
         return FakeQuery(self, table_name)
@@ -262,12 +277,38 @@ class WeddingApiIntegrationTest(unittest.TestCase):
             response = self.client.get("/api/admin/guests")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()[0]["id"], GUEST_ID)
+        self.assertEqual(response.json()["items"][0]["id"], GUEST_ID)
         self.assertEqual(fake_supabase.select_execute_calls, 3)
         self.assertEqual(
             [call.args[0] for call in sleep.call_args_list],
             [0.1, 0.2],
         )
+
+    def test_admin_guest_list_returns_paginated_result(self):
+        guests = [
+            guest_record(id=f"00000000-0000-4000-8000-00000000000{index}", name=f"Guest {index}")
+            for index in range(1, 6)
+        ]
+        fake_supabase = FakeSupabase(select_data=guests)
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.get("/api/admin/guests?page=2&page_size=2")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "items": [
+                    {**guest_record(id="00000000-0000-4000-8000-000000000003", name="Guest 3"), "gift_amount": "0"},
+                    {**guest_record(id="00000000-0000-4000-8000-000000000004", name="Guest 4"), "gift_amount": "0"},
+                ],
+                "total": 5,
+                "page": 2,
+                "page_size": 2,
+            },
+        )
+        self.assertEqual(fake_supabase.last_range_args, (2, 3))
+        self.assertEqual(fake_supabase.last_select_count, "exact")
 
     def test_admin_can_update_rsvp_deadline(self):
         fake_supabase = FakeSupabase()

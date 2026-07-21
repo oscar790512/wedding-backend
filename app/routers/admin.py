@@ -15,6 +15,7 @@ from app.schemas.guest import (
     CronCounterIncrement,
     CronCounterResponse,
     GuestCheckinUpdate,
+    GuestListResponse,
     GuestResponse,
     GuestStatus,
     ShippingFilter,
@@ -673,7 +674,7 @@ def get_summary(_admin: dict = Depends(get_current_admin)) -> AdminSummary:
     )
 
 
-@router.get("/guests", response_model=list[GuestResponse])
+@router.get("/guests", response_model=GuestListResponse)
 def list_guests(
     q: str | None = Query(default=None, max_length=100),
     status_filter: GuestStatus | None = Query(default=None, alias="status"),
@@ -681,9 +682,17 @@ def list_guests(
     category: str | None = Query(default=None, max_length=100),
     table: str | None = Query(default=None, max_length=100),
     has_diet_notes: bool | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
     _admin: dict = Depends(get_current_admin),
-) -> list[GuestResponse]:
-    query = _active_guests_query().order("created_at")
+) -> GuestListResponse:
+    query = (
+        get_supabase()
+        .table("guests")
+        .select("*", count="exact")
+        .is_("deleted_at", "null")
+        .order("created_at")
+    )
 
     if q:
         search = _sanitize_search(q)
@@ -715,8 +724,16 @@ def list_guests(
             "cake_status.in.(pending_address,pending_send)"
         )
 
-    response = execute_read(query)
-    return response.data or []
+    start = (page - 1) * page_size
+    end = start + page_size - 1
+
+    response = execute_read(query.range(start, end))
+    return GuestListResponse(
+        items=response.data or [],
+        total=response.count or 0,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post(

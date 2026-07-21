@@ -378,6 +378,13 @@ class GuestResponse(BaseModel):
     deleted_at: str | None = None
 
 
+class GuestListResponse(BaseModel):
+    items: list[GuestResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 class GuestCheckinUpdate(AdminGuestUpdate):
     is_arrived: bool | None = None
     actual_adults: int | None = Field(default=None, ge=0)
