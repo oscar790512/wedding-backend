@@ -6,9 +6,8 @@ on:
       - main
 
 jobs:
-  verify-staging:
+  unit-test:
     runs-on: ubuntu-latest
-    environment: staging
 
     steps:
       - name: Checkout repository
@@ -29,6 +28,15 @@ jobs:
           SUPABASE_URL: https://example.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
           JWT_SECRET: test-jwt-secret
+
+  verify-staging:
+    needs: unit-test
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Confirm Northflank staging deploy is handled by Git integration
         run: echo "Northflank deploys the main branch through its Git integration."
