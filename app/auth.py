@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -13,6 +14,7 @@ from app.database import execute_read, get_supabase
 
 security = HTTPBearer()
 AUTH_BACKEND_UNAVAILABLE_DETAIL = "Login service is temporarily unavailable"
+logger = logging.getLogger(__name__)
 
 
 def hash_password(password: str) -> str:
@@ -47,6 +49,7 @@ def create_access_token(username: str, role: str, token_version: int) -> str:
 
 
 def _raise_auth_backend_unavailable(exc: Exception) -> None:
+    logger.exception("Admin login backend lookup failed")
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail=AUTH_BACKEND_UNAVAILABLE_DETAIL,
