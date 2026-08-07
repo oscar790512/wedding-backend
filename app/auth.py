@@ -2,14 +2,17 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import bcrypt
+import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from postgrest import APIError
 
 from app.config import settings
 from app.database import execute_read, get_supabase
 
 security = HTTPBearer()
+AUTH_BACKEND_UNAVAILABLE_DETAIL = "Login service is temporarily unavailable"
 
 
 def hash_password(password: str) -> str:
@@ -43,6 +46,13 @@ def create_access_token(username: str, role: str, token_version: int) -> str:
     )
 
 
+def _raise_auth_backend_unavailable(exc: Exception) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=AUTH_BACKEND_UNAVAILABLE_DETAIL,
+    ) from exc
+
+
 def authenticate_admin(username: str, password: str) -> dict | None:
     normalized_username = username.strip().lower()
     query = (
@@ -52,33 +62,41 @@ def authenticate_admin(username: str, password: str) -> dict | None:
             "username,display_name,password_hash,role,is_active,token_version",
         )
     )
-    response = execute_read(query.eq("username", normalized_username).limit(1))
-    if not response.data and username != normalized_username:
-        response = execute_read(
-            get_supabase()
-            .table("admin_users")
-            .select(
-                "username,display_name,password_hash,role,is_active,token_version",
+    try:
+        response = execute_read(query.eq("username", normalized_username).limit(1))
+        if not response.data and username != normalized_username:
+            response = execute_read(
+                get_supabase()
+                .table("admin_users")
+                .select(
+                    "username,display_name,password_hash,role,is_active,token_version",
+                )
+                .eq("username", username)
+                .limit(1)
             )
-            .eq("username", username)
-            .limit(1)
-        )
+    except (APIError, httpx.HTTPError) as exc:
+        _raise_auth_backend_unavailable(exc)
+
     if not response.data:
         return None
 
     user = response.data[0]
-    if not user["is_active"] or not verify_password(
-        password,
-        user["password_hash"],
-    ):
-        return None
+    try:
+        if not user["is_active"] or not verify_password(
+            password,
+            user["password_hash"],
+        ):
+            return None
 
-    return {
-        "username": user["username"],
-        "display_name": user["display_name"],
-        "role": user["role"],
-        "token_version": user["token_version"],
-    }
+        return {
+            "username": user["username"],
+            "display_name": user["display_name"],
+            "role": user["role"],
+            "token_version": user["token_version"],
+        }
+    except KeyError as exc:
+        _raise_auth_backend_unavailable(exc)
+        return None
 
 
 def get_current_admin(

@@ -6,6 +6,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
+from postgrest import APIError
 
 from app.auth import authenticate_admin, create_access_token, get_current_admin
 from app.main import app
@@ -13,6 +14,17 @@ from app.rate_limit import reset_rate_limiters
 
 
 NOW = "2026-07-21T12:00:00+00:00"
+
+
+def api_error(message="supabase query failed"):
+    return APIError(
+        {
+            "message": message,
+            "code": "PGRST200",
+            "hint": None,
+            "details": None,
+        },
+    )
 
 
 def staff_record(**overrides):
@@ -73,6 +85,8 @@ class StaffQuery:
     def execute(self):
         rows = self.supabase.tables.setdefault(self.table_name, [])
         if self.operation == "select":
+            if self.supabase.select_error:
+                raise self.supabase.select_error
             data = [deepcopy(row) for row in rows if self._matches(row)]
             if self.ordering:
                 field, desc = self.ordering
@@ -101,11 +115,12 @@ class StaffQuery:
 
 
 class StaffSupabase:
-    def __init__(self, admin_users=None, audit_logs=None):
+    def __init__(self, admin_users=None, audit_logs=None, select_error=None):
         self.tables = {
             "admin_users": deepcopy(admin_users or []),
             "admin_user_audit_logs": deepcopy(audit_logs or []),
         }
+        self.select_error = select_error
 
     def table(self, table_name):
         return StaffQuery(self, table_name)
@@ -340,6 +355,22 @@ class SessionVersionTest(unittest.TestCase):
             "Too many requests. Please try again later.",
         )
         self.assertIn("retry-after", response.headers)
+
+    def test_login_returns_service_unavailable_when_user_lookup_fails(self):
+        client = TestClient(app, raise_server_exceptions=False)
+        fake_supabase = StaffSupabase(select_error=api_error())
+
+        with patch("app.auth.get_supabase", return_value=fake_supabase):
+            response = client.post(
+                "/api/auth/login",
+                json={"username": "frontdesk-1", "password": "password123"},
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"],
+            "Login service is temporarily unavailable",
+        )
 
     def test_login_normalizes_username_and_returns_display_name(self):
         fake_supabase = StaffSupabase(admin_users=[staff_record()])
