@@ -16,9 +16,11 @@ from app.schemas.guest import (
     CronCounterResponse,
     GuestCheckinUpdate,
     GuestListResponse,
+    GuestListSort,
     GuestResponse,
     GuestStatus,
     ShippingFilter,
+    SortOrder,
     TableSettingRename,
     TableSettingResponse,
     TableSettingUpsert,
@@ -682,6 +684,8 @@ def list_guests(
     category: str | None = Query(default=None, max_length=100),
     table: str | None = Query(default=None, max_length=100),
     has_diet_notes: bool | None = Query(default=None),
+    sort: GuestListSort = Query(default="created_at"),
+    order: SortOrder = Query(default="asc"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
     _admin: dict = Depends(get_current_admin),
@@ -691,7 +695,7 @@ def list_guests(
         .table("guests")
         .select("*", count="exact")
         .is_("deleted_at", "null")
-        .order("created_at")
+        .order(sort, desc=order == "desc")
     )
 
     if q:

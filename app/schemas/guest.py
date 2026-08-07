@@ -37,6 +37,8 @@ CakeStatus = Literal[
     "pickup",
 ]
 ShippingFilter = Literal["invitation", "cake", "pending"]
+GuestListSort = Literal["created_at"]
+SortOrder = Literal["asc", "desc"]
 
 
 class GuestBase(BaseModel):

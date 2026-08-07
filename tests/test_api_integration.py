@@ -71,6 +71,8 @@ class FakeQuery:
         self.filters = []
         self.range_args = None
         self.count = None
+        self.order_args = None
+        self.order_kwargs = None
 
     def select(self, *_args, count=None):
         self.operation = "select"
@@ -104,7 +106,11 @@ class FakeQuery:
     def limit(self, *_args):
         return self
 
-    def order(self, *_args, **_kwargs):
+    def order(self, *args, **kwargs):
+        self.order_args = args
+        self.order_kwargs = kwargs
+        self.supabase.last_order_args = args
+        self.supabase.last_order_kwargs = kwargs
         return self
 
     def range(self, start, end):
@@ -165,6 +171,8 @@ class FakeSupabase:
         self.upsert_conflict = None
         self.last_range_args = None
         self.last_select_count = None
+        self.last_order_args = None
+        self.last_order_kwargs = None
 
     def table(self, table_name):
         return FakeQuery(self, table_name)
@@ -348,6 +356,16 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(fake_supabase.last_range_args, (2, 3))
         self.assertEqual(fake_supabase.last_select_count, "exact")
+
+    def test_admin_guest_list_accepts_created_at_desc_order(self):
+        fake_supabase = FakeSupabase(select_data=[guest_record()])
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.get("/api/admin/guests?sort=created_at&order=desc")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fake_supabase.last_order_args, ("created_at",))
+        self.assertEqual(fake_supabase.last_order_kwargs, {"desc": True})
 
     def test_admin_can_update_rsvp_deadline(self):
         fake_supabase = FakeSupabase()
