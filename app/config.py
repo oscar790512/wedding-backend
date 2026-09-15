@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 480
     cors_origins: str = "*"
     cron_counter_secret: str = ""
+    public_base_url: str = ""
+    line_channel_access_token: str = ""
+    line_channel_secret: str = ""
+    line_seat_lookup_keyword: str = "查座位"
 
 
 settings = Settings()

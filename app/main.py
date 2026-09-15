@@ -1,8 +1,14 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.routers import admin, auth, rsvp
+
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="Wedding RSVP API", version="1.0.0")
 
@@ -23,6 +29,7 @@ app.add_middleware(
 app.include_router(rsvp.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")

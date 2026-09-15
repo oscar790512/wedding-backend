@@ -1,3 +1,7 @@
+import base64
+import hashlib
+import hmac
+import json
 import unittest
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -14,6 +18,11 @@ from app.rate_limit import reset_rate_limiters
 
 
 GUEST_ID = "00000000-0000-4000-8000-000000000001"
+
+
+def line_signature(body: bytes, secret: str) -> str:
+    digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
+    return base64.b64encode(digest).decode("utf-8")
 
 
 def guest_record(**overrides):
@@ -107,6 +116,10 @@ class FakeQuery:
         self.filters.append(("is", field, value))
         return self
 
+    def like(self, field, value):
+        self.filters.append(("like", field, value))
+        return self
+
     def limit(self, *_args):
         return self
 
@@ -132,6 +145,14 @@ class FakeQuery:
                     data = [row for row in data if row.get(field) == value]
                 elif operation == "is" and value == "null":
                     data = [row for row in data if row.get(field) is None]
+                elif operation == "like":
+                    needle = value.strip("%")
+                    if value.startswith("%") and not value.endswith("%"):
+                        data = [row for row in data if str(row.get(field) or "").endswith(needle)]
+                    elif value.endswith("%") and not value.startswith("%"):
+                        data = [row for row in data if str(row.get(field) or "").startswith(needle)]
+                    else:
+                        data = [row for row in data if needle in str(row.get(field) or "")]
             total = len(data)
             if self.range_args is not None:
                 start, end = self.range_args
@@ -203,6 +224,9 @@ class WeddingApiIntegrationTest(unittest.TestCase):
     def tearDown(self):
         app.dependency_overrides.clear()
         reset_rate_limiters()
+        import app.routers.rsvp as rsvp_router
+
+        rsvp_router.line_lookup_sessions.clear()
 
     def test_rsvp_submit_creates_attending_guest_with_checkin_token(self):
         fake_supabase = FakeSupabase()
@@ -316,6 +340,293 @@ class WeddingApiIntegrationTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["rsvp_deadline"], "2026-10-04")
+
+    def test_seat_video_lookup_returns_guest_and_table_video_by_phone_last5(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [
+                    guest_record(
+                        name="王小明",
+                        phone="0912345678",
+                        total_adults=2,
+                        total_children=1,
+                        allocated_table="第 3 桌",
+                    ),
+                ],
+            },
+        )
+
+        with patch("app.routers.rsvp.get_supabase", return_value=fake_supabase):
+            response = self.client.post(
+                "/api/seat-video-lookup",
+                json={"phone_last5": "45678"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "guest": {
+                    "name": "王小明",
+                    "total_adults": 2,
+                    "total_children": 1,
+                    "attendee_count": 3,
+                    "allocated_table": "第 3 桌",
+                    "phone_last5": "45678",
+                },
+                "message_text": "王小明，電話後五碼 45678\n桌次：第 3 桌\n同行人數：3 位",
+                "video_filename": "table-03.mp4",
+                "video_url": "http://testserver/static/seat-videos/table-03.mp4",
+                "preview_image_url": "http://testserver/static/seat-videos/table-03.png",
+                "line_video_message": {
+                    "type": "video",
+                    "originalContentUrl": "http://testserver/static/seat-videos/table-03.mp4",
+                    "previewImageUrl": "http://testserver/static/seat-videos/table-03.png",
+                },
+            },
+        )
+
+    def test_seat_video_lookup_returns_unassigned_guest_without_video(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [
+                    guest_record(
+                        name="王小明",
+                        phone="0912345678",
+                        total_adults=2,
+                        total_children=1,
+                        allocated_table=None,
+                    ),
+                ],
+            },
+        )
+
+        with patch("app.routers.rsvp.get_supabase", return_value=fake_supabase):
+            response = self.client.post(
+                "/api/seat-video-lookup",
+                json={"phone_last5": "45678"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["guest"]["allocated_table"], None)
+        self.assertEqual(
+            response.json()["message_text"],
+            "王小明，電話後五碼 45678\n桌次：座位安排中，請洽現場工作人員\n同行人數：3 位",
+        )
+        self.assertIsNone(response.json()["video_filename"])
+        self.assertIsNone(response.json()["line_video_message"])
+
+    def test_seat_video_lookup_rejects_unknown_phone_last5(self):
+        fake_supabase = FakeSupabase(table_data={"guests": []})
+
+        with patch("app.routers.rsvp.get_supabase", return_value=fake_supabase):
+            response = self.client.post(
+                "/api/seat-video-lookup",
+                json={"phone_last5": "99999"},
+            )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(
+            response.json()["detail"],
+            "找不到出席資料，請確認電話後五碼或洽現場工作人員",
+        )
+
+    def test_seat_video_lookup_rejects_duplicate_phone_last5_matches(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [
+                    guest_record(id="00000000-0000-4000-8000-000000000001", phone="0912345678"),
+                    guest_record(id="00000000-0000-4000-8000-000000000002", phone="0987645678"),
+                ],
+            },
+        )
+
+        with patch("app.routers.rsvp.get_supabase", return_value=fake_supabase):
+            response = self.client.post(
+                "/api/seat-video-lookup",
+                json={"phone_last5": "45678"},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.json()["detail"],
+            "查到多筆資料，請洽現場工作人員協助確認座位",
+        )
+
+    def test_line_webhook_replies_with_seat_text_and_video_for_keyword_and_phone_last5(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [
+                    guest_record(
+                        name="王小明",
+                        phone="0912345678",
+                        total_adults=2,
+                        total_children=1,
+                        allocated_table="第 3 桌",
+                    ),
+                ],
+            },
+        )
+        body = json.dumps(
+            {
+                "events": [
+                    {
+                        "replyToken": "reply-token",
+                        "source": {"type": "user", "userId": "user-1"},
+                        "message": {
+                            "type": "text",
+                            "text": "查座位 45678",
+                        },
+                    },
+                ],
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+        with (
+            patch("app.routers.rsvp.get_supabase", return_value=fake_supabase),
+            patch("app.routers.rsvp.settings.line_channel_secret", "secret"),
+            patch("app.routers.rsvp._reply_line_message") as reply,
+        ):
+            response = self.client.post(
+                "/api/line/webhook",
+                content=body,
+                headers={"x-line-signature": line_signature(body, "secret")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        reply.assert_called_once_with(
+            "reply-token",
+            [
+                {
+                    "type": "text",
+                    "text": "王小明，電話後五碼 45678\n桌次：第 3 桌\n同行人數：3 位",
+                },
+                {
+                    "type": "video",
+                    "originalContentUrl": "http://testserver/static/seat-videos/table-03.mp4",
+                    "previewImageUrl": "http://testserver/static/seat-videos/table-03.png",
+                },
+            ],
+        )
+
+    def test_line_webhook_requires_keyword_before_phone_last5(self):
+        body = json.dumps(
+            {
+                "events": [
+                    {
+                        "replyToken": "reply-token",
+                        "source": {"type": "user", "userId": "user-1"},
+                        "message": {
+                            "type": "text",
+                            "text": "45678",
+                        },
+                    },
+                ],
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+        with (
+            patch("app.routers.rsvp.settings.line_channel_secret", "secret"),
+            patch("app.routers.rsvp._reply_line_message") as reply,
+        ):
+            response = self.client.post(
+                "/api/line/webhook",
+                content=body,
+                headers={"x-line-signature": line_signature(body, "secret")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        reply.assert_called_once_with(
+            "reply-token",
+            [{"type": "text", "text": "請先輸入「查座位」，再輸入電話後五碼。"}],
+        )
+
+    def test_line_webhook_accepts_phone_last5_after_lookup_keyword(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [
+                    guest_record(
+                        name="王小明",
+                        phone="0912345678",
+                        total_adults=2,
+                        total_children=1,
+                        allocated_table="第 3 桌",
+                    ),
+                ],
+            },
+        )
+        body = json.dumps(
+            {
+                "events": [
+                    {
+                        "replyToken": "keyword-token",
+                        "source": {"type": "user", "userId": "user-1"},
+                        "message": {
+                            "type": "text",
+                            "text": "查座位",
+                        },
+                    },
+                    {
+                        "replyToken": "lookup-token",
+                        "source": {"type": "user", "userId": "user-1"},
+                        "message": {
+                            "type": "text",
+                            "text": "45678",
+                        },
+                    },
+                ],
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+        with (
+            patch("app.routers.rsvp.get_supabase", return_value=fake_supabase),
+            patch("app.routers.rsvp.settings.line_channel_secret", "secret"),
+            patch("app.routers.rsvp._reply_line_message") as reply,
+        ):
+            response = self.client.post(
+                "/api/line/webhook",
+                content=body,
+                headers={"x-line-signature": line_signature(body, "secret")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(reply.call_args_list[0].args[0], "keyword-token")
+        self.assertEqual(
+            reply.call_args_list[0].args[1],
+            [{"type": "text", "text": "請輸入電話後五碼，例如：45678"}],
+        )
+        self.assertEqual(reply.call_args_list[1].args[0], "lookup-token")
+        self.assertEqual(
+            reply.call_args_list[1].args[1][0],
+            {
+                "type": "text",
+                "text": "王小明，電話後五碼 45678\n桌次：第 3 桌\n同行人數：3 位",
+            },
+        )
+        self.assertEqual(
+            reply.call_args_list[1].args[1][1],
+            {
+                "type": "video",
+                "originalContentUrl": "http://testserver/static/seat-videos/table-03.mp4",
+                "previewImageUrl": "http://testserver/static/seat-videos/table-03.png",
+            },
+        )
+
+    def test_line_webhook_rejects_invalid_signature(self):
+        body = b'{"events":[]}'
+
+        with patch("app.routers.rsvp.settings.line_channel_secret", "secret"):
+            response = self.client.post(
+                "/api/line/webhook",
+                content=body,
+                headers={"x-line-signature": "bad-signature"},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "Invalid LINE signature")
 
     def test_admin_guest_list_retries_transient_supabase_read_errors(self):
         request = httpx.Request(

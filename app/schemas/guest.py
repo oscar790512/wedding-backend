@@ -469,6 +469,42 @@ class TableLayoutUpdate(BaseModel):
     slots: list[TableLayoutSlotUpsert]
 
 
+class SeatLookupRequest(BaseModel):
+    phone_last5: str = Field(min_length=5, max_length=20)
+
+    @field_validator("phone_last5")
+    @classmethod
+    def normalize_phone_last5(cls, value: str) -> str:
+        digits = "".join(ch for ch in value.strip() if ch.isdigit())
+        if len(digits) != 5:
+            raise ValueError("請輸入電話後五碼")
+        return digits
+
+
+class SeatVideoGuest(BaseModel):
+    name: str
+    total_adults: int
+    total_children: int
+    attendee_count: int
+    allocated_table: str | None = None
+    phone_last5: str
+
+
+class LineVideoMessage(BaseModel):
+    type: str = "video"
+    originalContentUrl: str
+    previewImageUrl: str
+
+
+class SeatVideoLookupResponse(BaseModel):
+    guest: SeatVideoGuest
+    message_text: str
+    video_filename: str | None = None
+    video_url: str | None = None
+    preview_image_url: str | None = None
+    line_video_message: LineVideoMessage | None = None
+
+
 class AdminSummary(BaseModel):
     total_guests: int
     attending_households: int
