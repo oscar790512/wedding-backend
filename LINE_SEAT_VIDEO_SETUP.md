@@ -92,8 +92,14 @@ shows every table name on its table. Each video then zooms to the target table
 and flashes the table ring five times.
 
 The uploaded floor plan contains 27 regular tables plus `主桌`, for 28 total
-tables. The API maps system table names through `manifest.json`; for example,
-`男方同事6` maps to `table-25.mp4`, and `主桌` maps to `main-table.mp4`.
+tables. The API maps tables to videos with the hidden
+`table_settings.seat_video_key` first, so a table can be renamed without losing
+its video mapping. The old table names in `manifest.json` remain as a fallback;
+for example, the fixed key `table-25` maps to `table-25.mp4`, and `main-table`
+maps to `main-table.mp4`.
+
+Before enabling LINE lookup in an environment, apply the database schema so
+existing `table_settings` rows receive their fixed `seat_video_key` values.
 
 To regenerate only one video while tuning a coordinate:
 

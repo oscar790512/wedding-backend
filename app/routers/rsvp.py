@@ -50,16 +50,56 @@ def _public_url(request: Request, path: str) -> str:
     return f"{base_url}{path}"
 
 
-def _table_video_filename(table_name: str | None) -> str | None:
+def _seat_video_manifest() -> list[dict]:
+    manifest_path = SEAT_VIDEO_DIR / "manifest.json"
+    if not manifest_path.exists():
+        return []
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def _manifest_video_filename(
+    *,
+    seat_video_key: str | None = None,
+    table_name: str | None = None,
+) -> str | None:
+    if not seat_video_key and not table_name:
+        return None
+
+    for item in _seat_video_manifest():
+        if seat_video_key and item.get("seat_video_key") == seat_video_key:
+            return item.get("video_filename")
+        if table_name and item.get("table_name") == table_name:
+            return item.get("video_filename")
+
+    return None
+
+
+def _table_seat_video_key(supabase, table_name: str | None) -> str | None:
+    if not table_name:
+        return None
+    response = execute_read(
+        supabase.table("table_settings")
+        .select("seat_video_key")
+        .eq("table_name", table_name)
+        .limit(1)
+    )
+    if not response.data:
+        return None
+    return response.data[0].get("seat_video_key")
+
+
+def _table_video_filename(supabase, table_name: str | None) -> str | None:
     if not table_name:
         return None
 
-    manifest_path = SEAT_VIDEO_DIR / "manifest.json"
-    if manifest_path.exists():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        for item in manifest:
-            if item.get("table_name") == table_name:
-                return item.get("video_filename")
+    seat_video_key = _table_seat_video_key(supabase, table_name)
+    video_filename = _manifest_video_filename(seat_video_key=seat_video_key)
+    if video_filename:
+        return video_filename
+
+    video_filename = _manifest_video_filename(table_name=table_name)
+    if video_filename:
+        return video_filename
 
     if table_name == "主桌":
         return "main-table.mp4"
@@ -220,7 +260,7 @@ def _lookup_seat_video(
     total_adults = int(guest.get("total_adults") or 0)
     total_children = int(guest.get("total_children") or 0)
     attendee_count = total_adults + total_children
-    video_filename = _table_video_filename(guest.get("allocated_table"))
+    video_filename = _table_video_filename(supabase, guest.get("allocated_table"))
     video_url = None
     preview_image_url = None
     line_video_message = None

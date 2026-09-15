@@ -419,6 +419,42 @@ class WeddingApiIntegrationTest(unittest.TestCase):
             },
         )
 
+    def test_seat_video_lookup_uses_fixed_video_key_after_table_rename(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [
+                    guest_record(
+                        name="王小明",
+                        phone="0912345678",
+                        total_adults=2,
+                        total_children=1,
+                        allocated_table="男方公司同事",
+                    ),
+                ],
+                "table_settings": [
+                    {
+                        "table_name": "男方公司同事",
+                        "capacity": 12,
+                        "seat_video_key": "table-25",
+                    },
+                ],
+            },
+        )
+
+        with patch("app.routers.rsvp.get_supabase", return_value=fake_supabase):
+            response = self.client.post(
+                "/api/seat-video-lookup",
+                json={"phone_last5": "45678"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["guest"]["allocated_table"], "男方公司同事")
+        self.assertEqual(response.json()["video_filename"], "table-25.mp4")
+        self.assertEqual(
+            response.json()["message_text"],
+            "王小明，電話後五碼 45678\n桌次：男方公司同事\n出席總人數：3 位",
+        )
+
     def test_seat_video_lookup_returns_unassigned_guest_without_video(self):
         fake_supabase = FakeSupabase(
             table_data={

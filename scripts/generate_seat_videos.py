@@ -278,6 +278,7 @@ def render_asset(
         encode_preview(frame_dir / "frame-034.ppm", preview_path)
 
     return {
+        "seat_video_key": filename_stem,
         "table_name": table_name,
         "video_filename": video_path.name,
         "preview_filename": preview_path.name,
