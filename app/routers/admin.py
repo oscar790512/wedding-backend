@@ -21,6 +21,8 @@ from app.schemas.guest import (
     GuestStatus,
     ShippingFilter,
     SortOrder,
+    TableLayoutResponse,
+    TableLayoutUpdate,
     TableSettingRename,
     TableSettingResponse,
     TableSettingUpsert,
@@ -516,6 +518,123 @@ def upsert_table_setting(
             detail="Failed to save table setting",
         )
     return response.data[0]
+
+
+@router.get("/table-layout", response_model=TableLayoutResponse)
+def get_table_layout(
+    _admin: dict = Depends(get_current_admin),
+) -> TableLayoutResponse:
+    supabase = get_supabase()
+    table_response = execute_read(
+        supabase.table("table_settings")
+        .select("table_name,capacity,created_at,updated_at")
+        .order("created_at")
+    )
+    slot_response = execute_read(
+        supabase.table("table_layout_slots")
+        .select("id,layout_name,column_index,position_index,table_name,created_at,updated_at")
+        .eq("layout_name", "default")
+        .order("column_index")
+        .order("position_index")
+    )
+
+    tables = table_response.data or []
+    slots = slot_response.data or []
+    placed_table_names = {
+        slot.get("table_name")
+        for slot in slots
+        if slot.get("table_name")
+    }
+    unplaced_tables = [
+        table
+        for table in tables
+        if table.get("table_name") != "主桌"
+        and table.get("table_name") not in placed_table_names
+    ]
+
+    return {
+        "slots": slots,
+        "unplaced_tables": unplaced_tables,
+    }
+
+
+@router.put("/table-layout", response_model=TableLayoutResponse)
+def replace_table_layout(
+    payload: TableLayoutUpdate,
+    _admin: dict = Depends(get_current_admin),
+) -> TableLayoutResponse:
+    supabase = get_supabase()
+    slots = payload.slots
+    table_names = [slot.table_name for slot in slots if slot.table_name]
+    slot_positions = [
+        (slot.column_index, slot.position_index)
+        for slot in slots
+    ]
+
+    if len(table_names) != len(set(table_names)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="同一桌不可安排在多個位置",
+        )
+    if len(slot_positions) != len(set(slot_positions)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="同一個座位圖位置不可重複",
+        )
+
+    if table_names:
+        table_response = execute_read(
+            supabase.table("table_settings")
+            .select("table_name")
+        )
+        existing_table_names = {
+            table.get("table_name")
+            for table in table_response.data or []
+        }
+        missing_table_names = sorted(set(table_names) - existing_table_names)
+        if missing_table_names:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"找不到桌次：{', '.join(missing_table_names)}",
+            )
+
+    delete_response = (
+        supabase.table("table_layout_slots")
+        .delete()
+        .eq("layout_name", "default")
+        .execute()
+    )
+    if delete_response.data is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear table layout",
+        )
+
+    now = _utc_now()
+    slot_payload = [
+        {
+            "layout_name": "default",
+            "column_index": slot.column_index,
+            "position_index": slot.position_index,
+            "table_name": slot.table_name,
+            "updated_at": now,
+        }
+        for slot in slots
+    ]
+
+    if slot_payload:
+        insert_response = (
+            supabase.table("table_layout_slots")
+            .insert(slot_payload)
+            .execute()
+        )
+        if not insert_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save table layout",
+            )
+
+    return get_table_layout(_admin)
 
 
 @router.patch("/table-settings/rename", response_model=TableSettingResponse)

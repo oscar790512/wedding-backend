@@ -435,6 +435,40 @@ class TableSettingResponse(TableSettingBase):
     updated_at: str | None = None
 
 
+class TableLayoutSlotBase(BaseModel):
+    column_index: int = Field(ge=1, le=4)
+    position_index: int = Field(ge=1)
+    table_name: str | None = Field(default=None, max_length=100)
+
+    @field_validator("table_name")
+    @classmethod
+    def strip_optional_table_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class TableLayoutSlotUpsert(TableLayoutSlotBase):
+    pass
+
+
+class TableLayoutSlotResponse(TableLayoutSlotBase):
+    id: str | None = None
+    layout_name: str = "default"
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class TableLayoutResponse(BaseModel):
+    slots: list[TableLayoutSlotResponse]
+    unplaced_tables: list[TableSettingResponse]
+
+
+class TableLayoutUpdate(BaseModel):
+    slots: list[TableLayoutSlotUpsert]
+
+
 class AdminSummary(BaseModel):
     total_guests: int
     attending_households: int

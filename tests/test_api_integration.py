@@ -89,6 +89,10 @@ class FakeQuery:
         self.payload = payload
         return self
 
+    def delete(self):
+        self.operation = "delete"
+        return self
+
     def upsert(self, payload, on_conflict=None):
         self.operation = "upsert"
         self.payload = payload
@@ -137,6 +141,9 @@ class FakeQuery:
             return SimpleNamespace(data=data, count=total)
         if self.operation == "insert":
             self.supabase.inserted_payload = deepcopy(self.payload)
+            if self.table_name != "guests":
+                data = deepcopy(self.payload)
+                return SimpleNamespace(data=data if isinstance(data, list) else [data])
             return SimpleNamespace(data=[guest_record(**self.payload)])
         if self.operation == "update":
             self.supabase.updated_payload = deepcopy(self.payload)
@@ -149,6 +156,10 @@ class FakeQuery:
         if self.operation == "upsert":
             self.supabase.upserted_payload = deepcopy(self.payload)
             return SimpleNamespace(data=[deepcopy(self.payload)])
+        if self.operation == "delete":
+            self.supabase.deleted_table = self.table_name
+            self.supabase.delete_filters = deepcopy(self.filters)
+            return SimpleNamespace(data=[])
         raise AssertionError(f"Unhandled fake operation: {self.operation}")
 
 
@@ -168,6 +179,8 @@ class FakeSupabase:
         self.inserted_payload = None
         self.updated_payload = None
         self.upserted_payload = None
+        self.deleted_table = None
+        self.delete_filters = None
         self.upsert_conflict = None
         self.last_range_args = None
         self.last_select_count = None
@@ -643,6 +656,125 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], "Only attending guests can be checked in")
         self.assertIsNone(fake_supabase.updated_payload)
+
+    def test_table_layout_returns_slots_and_unplaced_tables(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "table_settings": [
+                    {"table_name": "主桌", "capacity": 12},
+                    {"table_name": "第 1 桌", "capacity": 12},
+                    {"table_name": "第 2 桌", "capacity": 12},
+                ],
+                "table_layout_slots": [
+                    {
+                        "id": "slot-1",
+                        "layout_name": "default",
+                        "column_index": 1,
+                        "position_index": 1,
+                        "table_name": "第 1 桌",
+                    },
+                    {
+                        "id": "slot-2",
+                        "layout_name": "default",
+                        "column_index": 1,
+                        "position_index": 2,
+                        "table_name": None,
+                    },
+                ],
+            },
+        )
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.get("/api/admin/table-layout")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [slot["table_name"] for slot in response.json()["slots"]],
+            ["第 1 桌", None],
+        )
+        self.assertEqual(
+            [table["table_name"] for table in response.json()["unplaced_tables"]],
+            ["第 2 桌"],
+        )
+
+    def test_table_layout_replace_rejects_duplicate_table_assignment(self):
+        fake_supabase = FakeSupabase()
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.put(
+                "/api/admin/table-layout",
+                json={
+                    "slots": [
+                        {"column_index": 1, "position_index": 1, "table_name": "第 1 桌"},
+                        {"column_index": 2, "position_index": 1, "table_name": "第 1 桌"},
+                    ],
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "同一桌不可安排在多個位置")
+
+    def test_table_layout_replace_rejects_duplicate_position(self):
+        fake_supabase = FakeSupabase()
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.put(
+                "/api/admin/table-layout",
+                json={
+                    "slots": [
+                        {"column_index": 1, "position_index": 1, "table_name": "第 1 桌"},
+                        {"column_index": 1, "position_index": 1, "table_name": "第 2 桌"},
+                    ],
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "同一個座位圖位置不可重複")
+
+    def test_table_layout_replace_saves_slots(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "table_settings": [
+                    {"table_name": "主桌", "capacity": 12},
+                    {"table_name": "第 1 桌", "capacity": 12},
+                    {"table_name": "第 2 桌", "capacity": 12},
+                ],
+                "table_layout_slots": [],
+            },
+        )
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.put(
+                "/api/admin/table-layout",
+                json={
+                    "slots": [
+                        {"column_index": 1, "position_index": 1, "table_name": "第 1 桌"},
+                        {"column_index": 1, "position_index": 2, "table_name": None},
+                    ],
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fake_supabase.deleted_table, "table_layout_slots")
+        self.assertEqual(
+            fake_supabase.inserted_payload,
+            [
+                {
+                    "layout_name": "default",
+                    "column_index": 1,
+                    "position_index": 1,
+                    "table_name": "第 1 桌",
+                    "updated_at": fake_supabase.inserted_payload[0]["updated_at"],
+                },
+                {
+                    "layout_name": "default",
+                    "column_index": 1,
+                    "position_index": 2,
+                    "table_name": None,
+                    "updated_at": fake_supabase.inserted_payload[1]["updated_at"],
+                },
+            ],
+        )
 
 
 if __name__ == "__main__":
