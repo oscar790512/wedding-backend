@@ -79,7 +79,7 @@ def _seat_message_text(guest: dict, phone_last5: str, attendee_count: int) -> st
     return (
         f"{guest['name']}，電話後五碼 {phone_last5}\n"
         f"桌次：{table_name}\n"
-        f"同行人數：{attendee_count} 位"
+        f"出席總人數：{attendee_count} 位"
     )
 
 

@@ -374,7 +374,7 @@ class WeddingApiIntegrationTest(unittest.TestCase):
                     "allocated_table": "第 3 桌",
                     "phone_last5": "45678",
                 },
-                "message_text": "王小明，電話後五碼 45678\n桌次：第 3 桌\n同行人數：3 位",
+                "message_text": "王小明，電話後五碼 45678\n桌次：第 3 桌\n出席總人數：3 位",
                 "video_filename": "table-03.mp4",
                 "video_url": "http://testserver/static/seat-videos/table-03.mp4",
                 "preview_image_url": "http://testserver/static/seat-videos/table-03.png",
@@ -444,7 +444,7 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         self.assertEqual(response.json()["guest"]["allocated_table"], None)
         self.assertEqual(
             response.json()["message_text"],
-            "王小明，電話後五碼 45678\n桌次：座位安排中，請洽現場工作人員\n同行人數：3 位",
+            "王小明，電話後五碼 45678\n桌次：座位安排中，請洽現場工作人員\n出席總人數：3 位",
         )
         self.assertIsNone(response.json()["video_filename"])
         self.assertIsNone(response.json()["line_video_message"])
@@ -533,7 +533,7 @@ class WeddingApiIntegrationTest(unittest.TestCase):
             [
                 {
                     "type": "text",
-                    "text": "王小明，電話後五碼 45678\n桌次：第 3 桌\n同行人數：3 位",
+                    "text": "王小明，電話後五碼 45678\n桌次：第 3 桌\n出席總人數：3 位",
                 },
                 {
                     "type": "video",
@@ -636,7 +636,7 @@ class WeddingApiIntegrationTest(unittest.TestCase):
             reply.call_args_list[1].args[1][0],
             {
                 "type": "text",
-                "text": "王小明，電話後五碼 45678\n桌次：第 3 桌\n同行人數：3 位",
+                "text": "王小明，電話後五碼 45678\n桌次：第 3 桌\n出席總人數：3 位",
             },
         )
         self.assertEqual(
