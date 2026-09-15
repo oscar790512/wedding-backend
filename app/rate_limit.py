@@ -37,6 +37,8 @@ rsvp_ip_rate_limiter = SlidingWindowRateLimiter(limit=30, window_seconds=60)
 rsvp_phone_rate_limiter = SlidingWindowRateLimiter(limit=5, window_seconds=600)
 login_ip_rate_limiter = SlidingWindowRateLimiter(limit=20, window_seconds=300)
 login_username_rate_limiter = SlidingWindowRateLimiter(limit=20, window_seconds=300)
+seat_lookup_source_rate_limiter = SlidingWindowRateLimiter(limit=10, window_seconds=600)
+seat_lookup_phone_rate_limiter = SlidingWindowRateLimiter(limit=10, window_seconds=600)
 
 
 def client_ip(request: Request) -> str:
@@ -48,13 +50,16 @@ def client_ip(request: Request) -> str:
     return "unknown"
 
 
-def _raise_rate_limited(retry_after: int | None) -> None:
+def _raise_rate_limited(
+    retry_after: int | None,
+    detail: str = "Too many requests. Please try again later.",
+) -> None:
     headers = {}
     if retry_after is not None:
         headers["Retry-After"] = str(retry_after)
     raise HTTPException(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        detail="Too many requests. Please try again later.",
+        detail=detail,
         headers=headers,
     )
 
@@ -85,8 +90,24 @@ def enforce_login_rate_limit(request: Request, username: str) -> None:
         _raise_rate_limited(retry_after)
 
 
+def enforce_seat_lookup_rate_limit(source_key: str, phone_last5: str) -> None:
+    normalized_phone_last5 = phone_last5.strip()
+
+    retry_after = seat_lookup_source_rate_limiter.check(f"seat_lookup:source:{source_key}")
+    if retry_after is not None:
+        _raise_rate_limited(retry_after, "查詢太頻繁，請稍後再試。")
+
+    retry_after = seat_lookup_phone_rate_limiter.check(
+        f"seat_lookup:phone:{normalized_phone_last5}",
+    )
+    if retry_after is not None:
+        _raise_rate_limited(retry_after, "查詢太頻繁，請稍後再試。")
+
+
 def reset_rate_limiters() -> None:
     rsvp_ip_rate_limiter.reset()
     rsvp_phone_rate_limiter.reset()
     login_ip_rate_limiter.reset()
     login_username_rate_limiter.reset()
+    seat_lookup_source_rate_limiter.reset()
+    seat_lookup_phone_rate_limiter.reset()

@@ -486,6 +486,35 @@ class WeddingApiIntegrationTest(unittest.TestCase):
             "查到多筆資料，請洽現場工作人員協助確認座位",
         )
 
+    def test_seat_video_lookup_rate_limits_phone_last5(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [
+                    guest_record(
+                        name="王小明",
+                        phone="0912345678",
+                        total_adults=2,
+                        total_children=1,
+                        allocated_table="第 3 桌",
+                    ),
+                ],
+            },
+        )
+
+        with patch("app.routers.rsvp.get_supabase", return_value=fake_supabase):
+            responses = [
+                self.client.post(
+                    "/api/seat-video-lookup",
+                    json={"phone_last5": "45678"},
+                )
+                for _ in range(11)
+            ]
+
+        self.assertEqual([response.status_code for response in responses[:10]], [200] * 10)
+        self.assertEqual(responses[10].status_code, 429)
+        self.assertEqual(responses[10].json()["detail"], "查詢太頻繁，請稍後再試。")
+        self.assertIn("retry-after", responses[10].headers)
+
     def test_line_webhook_replies_with_seat_text_and_video_for_keyword_and_phone_last5(self):
         fake_supabase = FakeSupabase(
             table_data={
@@ -541,6 +570,57 @@ class WeddingApiIntegrationTest(unittest.TestCase):
                     "previewImageUrl": "http://testserver/static/seat-videos/table-03.png",
                 },
             ],
+        )
+
+    def test_line_webhook_rate_limits_repeated_phone_last5_lookups(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [
+                    guest_record(
+                        name="王小明",
+                        phone="0912345678",
+                        total_adults=2,
+                        total_children=1,
+                        allocated_table="第 3 桌",
+                    ),
+                ],
+            },
+        )
+        body = json.dumps(
+            {
+                "events": [
+                    {
+                        "replyToken": "reply-token",
+                        "source": {"type": "user", "userId": "user-1"},
+                        "message": {
+                            "type": "text",
+                            "text": "我坐哪啊？ 45678",
+                        },
+                    },
+                ],
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+        with (
+            patch("app.routers.rsvp.get_supabase", return_value=fake_supabase),
+            patch("app.routers.rsvp.settings.line_channel_secret", "secret"),
+            patch("app.routers.rsvp._reply_line_message") as reply,
+        ):
+            responses = [
+                self.client.post(
+                    "/api/line/webhook",
+                    content=body,
+                    headers={"x-line-signature": line_signature(body, "secret")},
+                )
+                for _ in range(11)
+            ]
+
+        self.assertEqual([response.status_code for response in responses], [200] * 11)
+        self.assertEqual(reply.call_count, 11)
+        self.assertEqual(
+            reply.call_args_list[-1].args,
+            ("reply-token", [{"type": "text", "text": "查詢太頻繁，請稍後再試。"}]),
         )
 
     def test_line_webhook_requires_keyword_before_phone_last5(self):

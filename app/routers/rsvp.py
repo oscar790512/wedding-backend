@@ -13,7 +13,7 @@ from fastapi import APIRouter, Header, HTTPException, Request, status
 
 from app.config import settings
 from app.database import execute_read, get_supabase
-from app.rate_limit import enforce_rsvp_rate_limit
+from app.rate_limit import client_ip, enforce_rsvp_rate_limit, enforce_seat_lookup_rate_limit
 from app.schemas.guest import (
     GuestResponse,
     RsvpRequest,
@@ -179,6 +179,21 @@ def lookup_seat_video(
     payload: SeatLookupRequest,
     request: Request,
 ) -> SeatVideoLookupResponse:
+    return _lookup_seat_video(
+        payload,
+        request,
+        rate_limit_source_key=f"ip:{client_ip(request)}",
+    )
+
+
+def _lookup_seat_video(
+    payload: SeatLookupRequest,
+    request: Request,
+    *,
+    rate_limit_source_key: str,
+) -> SeatVideoLookupResponse:
+    enforce_seat_lookup_rate_limit(rate_limit_source_key, payload.phone_last5)
+
     supabase = get_supabase()
     guest_response = execute_read(
         supabase.table("guests")
@@ -286,9 +301,10 @@ async def line_webhook(
             continue
 
         try:
-            result = lookup_seat_video(
+            result = _lookup_seat_video(
                 SeatLookupRequest(phone_last5=phone_last5),
                 request,
+                rate_limit_source_key=source_key or f"ip:{client_ip(request)}",
             )
         except HTTPException as exc:
             _reply_line_message(reply_token, [_line_text_message(str(exc.detail))])
