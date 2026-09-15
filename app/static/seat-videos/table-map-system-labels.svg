@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1076" height="1522" viewBox="0 0 1076 1522">
+  <image href="/Users/oscar/wedding-system/wedding_seats.jpg" x="0" y="0" width="1076" height="1522"/>
+  <defs>
+    <style>
+      .label {
+        fill: #5d3516;
+        font-family: "PingFang TC", "Noto Sans TC", "Arial Unicode MS", sans-serif;
+        font-weight: 700;
+        text-anchor: middle;
+        dominant-baseline: middle;
+        paint-order: stroke;
+        stroke: #fff7df;
+        stroke-width: 8px;
+        stroke-linejoin: round;
+      }
+      .one { font-size: 26px; }
+      .two { font-size: 22px; }
+      .tight { font-size: 21px; }
+      .main { font-size: 30px; }
+    </style>
+  </defs>
+  <g>
+    <text class="label main" x="543" y="404">主桌</text>
+
+    <text class="label two" x="232" y="371">女方</text>
+    <text class="label two" x="232" y="397">家人</text>
+    <text class="label one" x="232" y="525">小港黃家</text>
+    <text class="label two" x="232" y="664">女方</text>
+    <text class="label two" x="232" y="690">親友</text>
+    <text class="label two" x="232" y="810">女方</text>
+    <text class="label two" x="232" y="836">同事2</text>
+    <text class="label two" x="232" y="956">女方</text>
+    <text class="label two" x="232" y="982">同事3</text>
+    <text class="label tight" x="232" y="1102">男方研究所</text>
+    <text class="label two" x="232" y="1128">同學</text>
+    <text class="label one" x="232" y="1256">預備桌</text>
+
+    <text class="label two" x="418" y="540">女方</text>
+    <text class="label two" x="418" y="566">家人2</text>
+    <text class="label two" x="418" y="666">女方</text>
+    <text class="label two" x="418" y="692">家人4</text>
+    <text class="label two" x="418" y="790">女方國中</text>
+    <text class="label two" x="418" y="816">同學3</text>
+    <text class="label two" x="418" y="920">女方國中</text>
+    <text class="label two" x="418" y="946">同學</text>
+    <text class="label two" x="418" y="1040">女方大學</text>
+    <text class="label two" x="418" y="1066">同學</text>
+    <text class="label two" x="418" y="1169">女方</text>
+    <text class="label two" x="418" y="1195">同事</text>
+    <text class="label two" x="418" y="1311">男方</text>
+    <text class="label two" x="418" y="1337">同事5</text>
+
+    <text class="label two" x="669" y="540">男方</text>
+    <text class="label two" x="669" y="566">家人3</text>
+    <text class="label two" x="669" y="666">男方</text>
+    <text class="label two" x="669" y="692">家人5</text>
+    <text class="label two" x="669" y="790">男方</text>
+    <text class="label two" x="669" y="816">同事</text>
+    <text class="label two" x="669" y="916">男方</text>
+    <text class="label two" x="669" y="942">同事2</text>
+    <text class="label two" x="669" y="1029">男方</text>
+    <text class="label two" x="669" y="1055">同事3</text>
+    <text class="label two" x="670" y="1168">男方</text>
+    <text class="label two" x="670" y="1194">同事6</text>
+
+    <text class="label two" x="850" y="371">男方</text>
+    <text class="label two" x="850" y="397">家人</text>
+    <text class="label two" x="850" y="517">男方</text>
+    <text class="label two" x="850" y="543">家人2</text>
+    <text class="label two" x="850" y="663">男方</text>
+    <text class="label two" x="850" y="689">家人4</text>
+    <text class="label two" x="850" y="810">男方長輩</text>
+    <text class="label two" x="850" y="836">好友</text>
+    <text class="label two" x="850" y="956">男方</text>
+    <text class="label two" x="850" y="982">好友1</text>
+    <text class="label two" x="850" y="1102">男方</text>
+    <text class="label two" x="850" y="1128">好友2</text>
+    <text class="label two" x="850" y="1248">男方</text>
+    <text class="label two" x="850" y="1274">同事4</text>
+  </g>
+</svg>

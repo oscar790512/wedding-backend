@@ -22,35 +22,35 @@ HIGHLIGHT_DARK = (160, 105, 48)
 # Coordinates are measured against /Users/oscar/wedding-system/wedding_seats.jpg
 # at 1076 x 1522. The uploaded floor plan has 27 regular tables plus the main table.
 TABLE_POSITIONS = [
-    {"number": 1, "x": 229, "y": 379, "radius": 58},
-    {"number": 2, "x": 845, "y": 379, "radius": 58},
-    {"number": 3, "x": 229, "y": 525, "radius": 58},
-    {"number": 4, "x": 415, "y": 548, "radius": 58},
-    {"number": 5, "x": 666, "y": 548, "radius": 58},
-    {"number": 6, "x": 845, "y": 525, "radius": 58},
-    {"number": 7, "x": 229, "y": 672, "radius": 58},
-    {"number": 8, "x": 415, "y": 672, "radius": 58},
-    {"number": 9, "x": 666, "y": 672, "radius": 58},
-    {"number": 10, "x": 845, "y": 672, "radius": 58},
-    {"number": 11, "x": 229, "y": 818, "radius": 58},
-    {"number": 12, "x": 418, "y": 800, "radius": 58},
-    {"number": 13, "x": 666, "y": 800, "radius": 58},
-    {"number": 14, "x": 845, "y": 818, "radius": 58},
-    {"number": 15, "x": 229, "y": 964, "radius": 58},
-    {"number": 16, "x": 416, "y": 926, "radius": 58},
-    {"number": 17, "x": 672, "y": 922, "radius": 58},
-    {"number": 18, "x": 845, "y": 964, "radius": 58},
-    {"number": 19, "x": 229, "y": 1110, "radius": 58},
-    {"number": 20, "x": 425, "y": 1047, "radius": 58},
-    {"number": 21, "x": 675, "y": 1052, "radius": 58},
-    {"number": 22, "x": 845, "y": 1110, "radius": 58},
-    {"number": 23, "x": 229, "y": 1256, "radius": 58},
-    {"number": 24, "x": 415, "y": 1193, "radius": 58},
-    {"number": 25, "x": 666, "y": 1193, "radius": 58},
-    {"number": 26, "x": 845, "y": 1256, "radius": 58},
-    {"number": 27, "x": 415, "y": 1338, "radius": 58},
+    {"number": 1, "x": 232, "y": 379, "radius": 58, "table_name": "女方家人"},
+    {"number": 2, "x": 850, "y": 379, "radius": 58, "table_name": "男方家人"},
+    {"number": 3, "x": 232, "y": 525, "radius": 58, "table_name": "小港黃家"},
+    {"number": 4, "x": 418, "y": 548, "radius": 58, "table_name": "女方家人2"},
+    {"number": 5, "x": 669, "y": 548, "radius": 58, "table_name": "男方家人3"},
+    {"number": 6, "x": 850, "y": 525, "radius": 58, "table_name": "男方家人2"},
+    {"number": 7, "x": 232, "y": 672, "radius": 58, "table_name": "女方親友"},
+    {"number": 8, "x": 418, "y": 674, "radius": 58, "table_name": "女方家人4"},
+    {"number": 9, "x": 669, "y": 674, "radius": 58, "table_name": "男方家人5"},
+    {"number": 10, "x": 850, "y": 671, "radius": 58, "table_name": "男方家人4"},
+    {"number": 11, "x": 232, "y": 818, "radius": 58, "table_name": "女方同事2"},
+    {"number": 12, "x": 418, "y": 798, "radius": 58, "table_name": "女方國中同學3"},
+    {"number": 13, "x": 669, "y": 798, "radius": 58, "table_name": "男方同事"},
+    {"number": 14, "x": 850, "y": 818, "radius": 58, "table_name": "男方長輩好友"},
+    {"number": 15, "x": 232, "y": 964, "radius": 58, "table_name": "女方同事3"},
+    {"number": 16, "x": 418, "y": 928, "radius": 58, "table_name": "女方國中同學"},
+    {"number": 17, "x": 669, "y": 924, "radius": 58, "table_name": "男方同事2"},
+    {"number": 18, "x": 850, "y": 964, "radius": 58, "table_name": "男方好友1"},
+    {"number": 19, "x": 232, "y": 1110, "radius": 58, "table_name": "男方研究所同學"},
+    {"number": 20, "x": 418, "y": 1048, "radius": 58, "table_name": "女方大學同學"},
+    {"number": 21, "x": 669, "y": 1053, "radius": 58, "table_name": "男方同事3"},
+    {"number": 22, "x": 850, "y": 1110, "radius": 58, "table_name": "男方好友2"},
+    {"number": 23, "x": 232, "y": 1256, "radius": 58, "table_name": "預備桌"},
+    {"number": 24, "x": 418, "y": 1193, "radius": 58, "table_name": "女方同事"},
+    {"number": 25, "x": 670, "y": 1192, "radius": 58, "table_name": "男方同事6"},
+    {"number": 26, "x": 850, "y": 1256, "radius": 58, "table_name": "男方同事4"},
+    {"number": 27, "x": 418, "y": 1338, "radius": 58, "table_name": "男方同事5"},
 ]
-MAIN_TABLE = {"number": 28, "x": 538, "y": 405, "radius": 74, "main": True}
+MAIN_TABLE = {"number": 28, "x": 543, "y": 404, "radius": 74, "main": True}
 
 
 def ease(value: float) -> float:
@@ -327,7 +327,7 @@ def main() -> None:
                 table,
                 output_dir,
                 stem,
-                f"第 {table['number']} 桌",
+                table["table_name"],
             )
         )
 
@@ -344,19 +344,6 @@ def main() -> None:
             )
         )
 
-    if not requested or requested == "table-28":
-        manifest.append(
-            render_asset(
-                source_pixels,
-                source_width,
-                source_height,
-                MAIN_TABLE,
-                output_dir,
-                "table-28",
-                "第 28 桌",
-            )
-        )
-
     if not requested:
         (output_dir / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
@@ -366,7 +353,9 @@ def main() -> None:
     for leftover in output_dir.glob("table-*.jpg"):
         leftover.unlink()
 
-    shutil.copyfile(source, output_dir / "source-floor-plan.jpg")
+    source_copy_suffix = ".jpg" if source.suffix.lower() in {".jpg", ".jpeg"} else source.suffix.lower()
+    if source_copy_suffix:
+        shutil.copyfile(source, output_dir / f"source-floor-plan{source_copy_suffix}")
 
 
 if __name__ == "__main__":

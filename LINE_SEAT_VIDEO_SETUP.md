@@ -80,23 +80,23 @@ From `wedding-backend`:
 
 The script outputs:
 
-- `table-01.mp4` through `table-28.mp4`
-- `table-01.png` through `table-28.png`
+- `table-01.mp4` through `table-27.mp4`
+- `table-01.png` through `table-27.png`
 - `main-table.mp4`
 - `main-table.png`
 - `manifest.json`
-- `source-floor-plan.jpg`
+- `source-floor-plan.png` when generating from the labelled table map
 
-The videos use the uploaded real floor plan image as the background, then zoom to
-the target table and flash the table ring five times.
+The videos use the labelled system table map as the background, so every frame
+shows every table name on its table. Each video then zooms to the target table
+and flashes the table ring five times.
 
 The uploaded floor plan contains 27 regular tables plus `主桌`, for 28 total
-tables. The API maps `第 3 桌` to `table-03.mp4`; `主桌` maps to
-`main-table.mp4`. `table-28.mp4` is also generated at the main table position as
-a compatibility fallback if table data contains `第 28 桌`.
+tables. The API maps system table names through `manifest.json`; for example,
+`男方同事6` maps to `table-25.mp4`, and `主桌` maps to `main-table.mp4`.
 
 To regenerate only one video while tuning a coordinate:
 
 ```sh
-.venv/bin/python scripts/generate_seat_videos.py --source ../wedding_seats.jpg --output-dir app/static/seat-videos --only table-03
+.venv/bin/python scripts/generate_seat_videos.py --source app/static/seat-videos/table-map-system-labels.png --output-dir app/static/seat-videos --only table-03
 ```

@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import json
+from pathlib import Path
 import re
 import secrets
 import urllib.error
@@ -24,6 +25,7 @@ from app.schemas.settings import RsvpSettingsResponse
 router = APIRouter(tags=["rsvp"])
 LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply"
 LINE_LOOKUP_SESSION_TTL = timedelta(minutes=10)
+SEAT_VIDEO_DIR = Path(__file__).resolve().parent.parent / "static" / "seat-videos"
 line_lookup_sessions: dict[str, datetime] = {}
 
 
@@ -51,6 +53,14 @@ def _public_url(request: Request, path: str) -> str:
 def _table_video_filename(table_name: str | None) -> str | None:
     if not table_name:
         return None
+
+    manifest_path = SEAT_VIDEO_DIR / "manifest.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for item in manifest:
+            if item.get("table_name") == table_name:
+                return item.get("video_filename")
+
     if table_name == "主桌":
         return "main-table.mp4"
 

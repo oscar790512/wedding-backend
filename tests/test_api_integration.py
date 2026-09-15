@@ -386,6 +386,39 @@ class WeddingApiIntegrationTest(unittest.TestCase):
             },
         )
 
+    def test_seat_video_lookup_maps_system_table_name_from_manifest(self):
+        fake_supabase = FakeSupabase(
+            table_data={
+                "guests": [
+                    guest_record(
+                        name="王小明",
+                        phone="0912345678",
+                        total_adults=2,
+                        total_children=1,
+                        allocated_table="男方同事6",
+                    ),
+                ],
+            },
+        )
+
+        with patch("app.routers.rsvp.get_supabase", return_value=fake_supabase):
+            response = self.client.post(
+                "/api/seat-video-lookup",
+                json={"phone_last5": "45678"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["guest"]["allocated_table"], "男方同事6")
+        self.assertEqual(response.json()["video_filename"], "table-25.mp4")
+        self.assertEqual(
+            response.json()["line_video_message"],
+            {
+                "type": "video",
+                "originalContentUrl": "http://testserver/static/seat-videos/table-25.mp4",
+                "previewImageUrl": "http://testserver/static/seat-videos/table-25.png",
+            },
+        )
+
     def test_seat_video_lookup_returns_unassigned_guest_without_video(self):
         fake_supabase = FakeSupabase(
             table_data={
