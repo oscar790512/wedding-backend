@@ -15,38 +15,51 @@
       }
       .one { font-size: 26px; }
       .two { font-size: 22px; }
-      .tight { font-size: 21px; }
+      .three { font-size: 21px; }
+      .tight { font-size: 19px; }
       .main { font-size: 30px; }
     </style>
   </defs>
   <g>
     <text class="label main" x="543" y="404">主桌</text>
 
-    <text class="label two" x="232" y="371">女方</text>
-    <text class="label two" x="232" y="397">家人</text>
-    <text class="label one" x="232" y="525">小港黃家</text>
-    <text class="label two" x="232" y="664">女方</text>
-    <text class="label two" x="232" y="690">親友</text>
-    <text class="label two" x="232" y="810">女方</text>
-    <text class="label two" x="232" y="836">同事2</text>
-    <text class="label two" x="232" y="956">女方</text>
-    <text class="label two" x="232" y="982">同事3</text>
+    <text class="label three" x="232" y="353">凍齡</text>
+    <text class="label three" x="232" y="379">男神</text>
+    <text class="label three" x="232" y="405">女神</text>
+    <text class="label three" x="232" y="499">六腳鄉</text>
+    <text class="label three" x="232" y="525">黃氏親</text>
+    <text class="label three" x="232" y="551">家</text>
+    <text class="label tight" x="232" y="646">沒有血</text>
+    <text class="label tight" x="232" y="672">緣關係</text>
+    <text class="label tight" x="232" y="698">的姊妹</text>
+    <text class="label three" x="232" y="792">台中</text>
+    <text class="label three" x="232" y="818">SGS好</text>
+    <text class="label three" x="232" y="844">夥伴</text>
+    <text class="label three" x="232" y="938">SGS</text>
+    <text class="label three" x="232" y="964">好夥</text>
+    <text class="label three" x="232" y="990">伴</text>
     <text class="label tight" x="232" y="1102">男方研究所</text>
     <text class="label two" x="232" y="1128">同學</text>
     <text class="label one" x="232" y="1256">預備桌</text>
 
-    <text class="label two" x="418" y="540">女方</text>
-    <text class="label two" x="418" y="566">家人2</text>
-    <text class="label two" x="418" y="666">女方</text>
-    <text class="label two" x="418" y="692">家人4</text>
-    <text class="label two" x="418" y="790">女方國中</text>
-    <text class="label two" x="418" y="816">同學3</text>
-    <text class="label two" x="418" y="920">女方國中</text>
-    <text class="label two" x="418" y="946">同學</text>
-    <text class="label two" x="418" y="1040">女方大學</text>
-    <text class="label two" x="418" y="1066">同學</text>
-    <text class="label two" x="418" y="1169">女方</text>
-    <text class="label two" x="418" y="1195">同事</text>
+    <text class="label three" x="418" y="522">看著</text>
+    <text class="label three" x="418" y="548">我長</text>
+    <text class="label three" x="418" y="574">大</text>
+    <text class="label three" x="418" y="648">我愛萬</text>
+    <text class="label three" x="418" y="674">金萬金</text>
+    <text class="label three" x="418" y="700">愛我</text>
+    <text class="label three" x="418" y="772">楠梓國</text>
+    <text class="label three" x="418" y="798">中寶貝</text>
+    <text class="label three" x="418" y="824">們</text>
+    <text class="label three" x="418" y="902">一輩子</text>
+    <text class="label three" x="418" y="928">的楠中</text>
+    <text class="label three" x="418" y="954">306</text>
+    <text class="label three" x="418" y="1022">屏科生</text>
+    <text class="label three" x="418" y="1048">科不顆</text>
+    <text class="label three" x="418" y="1074">顆</text>
+    <text class="label tight" x="418" y="1167">當不成同</text>
+    <text class="label tight" x="418" y="1193">事當永遠</text>
+    <text class="label tight" x="418" y="1219">好麻吉</text>
     <text class="label two" x="418" y="1311">男方</text>
     <text class="label two" x="418" y="1337">同事5</text>
 
