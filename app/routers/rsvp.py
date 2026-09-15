@@ -26,6 +26,35 @@ router = APIRouter(tags=["rsvp"])
 LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply"
 LINE_LOOKUP_SESSION_TTL = timedelta(minutes=10)
 SEAT_VIDEO_DIR = Path(__file__).resolve().parent.parent / "static" / "seat-videos"
+FLOOR_SLOT_VIDEO_KEYS = {
+    (1, 1): "table-01",
+    (1, 2): "table-03",
+    (1, 3): "table-07",
+    (1, 4): "table-11",
+    (1, 5): "table-15",
+    (1, 6): "table-19",
+    (1, 7): "table-23",
+    (2, 1): "table-04",
+    (2, 2): "table-08",
+    (2, 3): "table-12",
+    (2, 4): "table-16",
+    (2, 5): "table-20",
+    (2, 6): "table-24",
+    (2, 7): "table-27",
+    (3, 1): "table-05",
+    (3, 2): "table-09",
+    (3, 3): "table-13",
+    (3, 4): "table-17",
+    (3, 5): "table-21",
+    (3, 6): "table-25",
+    (4, 1): "table-02",
+    (4, 2): "table-06",
+    (4, 3): "table-10",
+    (4, 4): "table-14",
+    (4, 5): "table-18",
+    (4, 6): "table-22",
+    (4, 7): "table-26",
+}
 line_lookup_sessions: dict[str, datetime] = {}
 
 
@@ -77,22 +106,54 @@ def _manifest_video_filename(
 def _table_seat_video_key(supabase, table_name: str | None) -> str | None:
     if not table_name:
         return None
+    try:
+        response = execute_read(
+            supabase.table("table_settings")
+            .select("seat_video_key")
+            .eq("table_name", table_name)
+            .limit(1)
+        )
+    except Exception:
+        return None
+    if not response.data:
+        return None
+    return response.data[0].get("seat_video_key")
+
+
+def _table_layout_seat_video_key(supabase, table_name: str | None) -> str | None:
+    if not table_name:
+        return None
     response = execute_read(
-        supabase.table("table_settings")
-        .select("seat_video_key")
+        supabase.table("table_layout_slots")
+        .select("column_index,position_index")
+        .eq("layout_name", "default")
         .eq("table_name", table_name)
         .limit(1)
     )
     if not response.data:
         return None
-    return response.data[0].get("seat_video_key")
+    slot = response.data[0]
+    return FLOOR_SLOT_VIDEO_KEYS.get(
+        (
+            int(slot.get("column_index") or 0),
+            int(slot.get("position_index") or 0),
+        )
+    )
 
 
 def _table_video_filename(supabase, table_name: str | None) -> str | None:
     if not table_name:
         return None
 
+    if table_name == "主桌":
+        return "main-table.mp4"
+
     seat_video_key = _table_seat_video_key(supabase, table_name)
+    video_filename = _manifest_video_filename(seat_video_key=seat_video_key)
+    if video_filename:
+        return video_filename
+
+    seat_video_key = _table_layout_seat_video_key(supabase, table_name)
     video_filename = _manifest_video_filename(seat_video_key=seat_video_key)
     if video_filename:
         return video_filename
@@ -100,9 +161,6 @@ def _table_video_filename(supabase, table_name: str | None) -> str | None:
     video_filename = _manifest_video_filename(table_name=table_name)
     if video_filename:
         return video_filename
-
-    if table_name == "主桌":
-        return "main-table.mp4"
 
     match = re.search(r"\d+", table_name)
     if match:
