@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     public_base_url: str = ""
     line_channel_access_token: str = ""
     line_channel_secret: str = ""
-    line_seat_lookup_keyword: str = "查座位"
+    line_seat_lookup_keyword: str = "我坐哪啊？"
 
 
 settings = Settings()

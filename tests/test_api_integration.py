@@ -475,7 +475,7 @@ class WeddingApiIntegrationTest(unittest.TestCase):
                         "source": {"type": "user", "userId": "user-1"},
                         "message": {
                             "type": "text",
-                            "text": "查座位 45678",
+                            "text": "我坐哪啊？ 45678",
                         },
                     },
                 ],
@@ -540,7 +540,7 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         reply.assert_called_once_with(
             "reply-token",
-            [{"type": "text", "text": "請先輸入「查座位」，再輸入電話後五碼。"}],
+            [{"type": "text", "text": "請先輸入「我坐哪啊？」，再輸入電話後五碼。"}],
         )
 
     def test_line_webhook_accepts_phone_last5_after_lookup_keyword(self):
@@ -565,7 +565,7 @@ class WeddingApiIntegrationTest(unittest.TestCase):
                         "source": {"type": "user", "userId": "user-1"},
                         "message": {
                             "type": "text",
-                            "text": "查座位",
+                            "text": "我坐哪啊？",
                         },
                     },
                     {

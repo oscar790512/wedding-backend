@@ -134,7 +134,7 @@ def _line_event_source_key(event: dict) -> str | None:
 
 
 def _lookup_keyword() -> str:
-    return settings.line_seat_lookup_keyword.strip() or "查座位"
+    return settings.line_seat_lookup_keyword.strip() or "我坐哪啊？"
 
 
 def _extract_phone_last5(text: str) -> str | None:

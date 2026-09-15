@@ -23,7 +23,7 @@ Set these on the backend deployment:
 PUBLIC_BASE_URL=https://your-backend.example.com
 LINE_CHANNEL_ACCESS_TOKEN=your-line-channel-access-token
 LINE_CHANNEL_SECRET=your-line-channel-secret
-LINE_SEAT_LOOKUP_KEYWORD=查座位
+LINE_SEAT_LOOKUP_KEYWORD=我坐哪啊？
 ```
 
 `PUBLIC_BASE_URL` must be the public HTTPS backend origin. LINE video messages use it to build URLs such as:
@@ -46,7 +46,7 @@ https://your-backend.example.com/api/line/webhook
 Two-step lookup:
 
 ```text
-查座位
+我坐哪啊？
 ```
 
 The bot replies:
@@ -64,7 +64,7 @@ Then the guest sends:
 One-message lookup:
 
 ```text
-查座位 45678
+我坐哪啊？ 45678
 ```
 
 If the guest sends only `45678` before entering lookup mode, the bot asks them
