@@ -537,7 +537,13 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(
             response.json()["detail"],
-            "找不到出席資料，請確認電話後五碼或洽現場工作人員",
+            (
+                "找不到出席資料，可能原因有：\n\n"
+                "1. 請再次確認，後五碼為您在登記問卷上填寫的電話後五碼\n"
+                "2. 若您為隨席賓客，請輸入登記人電話後五碼"
+                "（舉例：登記人為王小明，隨席 5 位，您可能為其中一位隨席賓客）\n\n"
+                "若以上無法查詢到，請洽現場工作人員"
+            ),
         )
 
     def test_seat_video_lookup_rejects_duplicate_phone_last5_matches(self):
