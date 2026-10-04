@@ -40,7 +40,6 @@ FLOOR_SLOT_VIDEO_KEYS = {
     (2, 4): "table-16",
     (2, 5): "table-20",
     (2, 6): "table-24",
-    (2, 7): "table-27",
     (3, 1): "table-05",
     (3, 2): "table-09",
     (3, 3): "table-13",
@@ -103,21 +102,49 @@ def _manifest_video_filename(
     return None
 
 
-def _table_seat_video_key(supabase, table_name: str | None) -> str | None:
+def _table_number(table_name: str | None, table_setting: dict | None) -> int | None:
+    if not table_name or table_name == "主桌":
+        return None
+
+    if table_setting and table_setting.get("table_number") is not None:
+        return int(table_setting["table_number"])
+
+    seat_video_key = table_setting.get("seat_video_key") if table_setting else None
+    for item in _seat_video_manifest():
+        if seat_video_key and item.get("seat_video_key") == seat_video_key:
+            number = item.get("table_number")
+            return int(number) if number is not None else None
+        if item.get("table_name") == table_name:
+            number = item.get("table_number")
+            return int(number) if number is not None else None
+
+    match = re.search(r"\d+", table_name)
+    return int(match.group()) if match else None
+
+
+def _table_setting(supabase, table_name: str | None) -> dict | None:
     if not table_name:
         return None
     try:
         response = execute_read(
             supabase.table("table_settings")
-            .select("seat_video_key")
+            .select("table_number,seat_video_key")
             .eq("table_name", table_name)
             .limit(1)
         )
     except Exception:
-        return None
+        try:
+            response = execute_read(
+                supabase.table("table_settings")
+                .select("seat_video_key")
+                .eq("table_name", table_name)
+                .limit(1)
+            )
+        except Exception:
+            return None
     if not response.data:
         return None
-    return response.data[0].get("seat_video_key")
+    return response.data[0]
 
 
 def _table_layout_seat_video_key(supabase, table_name: str | None) -> str | None:
@@ -141,14 +168,19 @@ def _table_layout_seat_video_key(supabase, table_name: str | None) -> str | None
     )
 
 
-def _table_video_filename(supabase, table_name: str | None) -> str | None:
+def _table_video_filename(
+    supabase,
+    table_name: str | None,
+    table_setting: dict | None = None,
+) -> str | None:
     if not table_name:
         return None
 
     if table_name == "主桌":
         return "main-table.mp4"
 
-    seat_video_key = _table_seat_video_key(supabase, table_name)
+    setting = table_setting if table_setting is not None else _table_setting(supabase, table_name)
+    seat_video_key = setting.get("seat_video_key") if setting else None
     video_filename = _manifest_video_filename(seat_video_key=seat_video_key)
     if video_filename:
         return video_filename
@@ -170,13 +202,27 @@ def _table_video_filename(supabase, table_name: str | None) -> str | None:
     return f"{safe_name}.mp4" if safe_name else None
 
 
-def _seat_message_text(guest: dict, phone_last5: str, attendee_count: int) -> str:
+def _seat_message_text(
+    guest: dict,
+    phone_last5: str,
+    attendee_count: int,
+    table_number: int | None,
+) -> str:
     table_name = guest.get("allocated_table")
     if not table_name:
-        table_name = "座位安排中，請洽現場工作人員"
+        return (
+            f"{guest['name']}，電話後五碼 {phone_last5}\n"
+            "桌次：座位安排中，請洽現場工作人員\n"
+            f"出席總人數：{attendee_count} 位"
+        )
+
+    table_number_text = "主桌" if table_name == "主桌" else (
+        f"第 {table_number} 桌" if table_number is not None else "尚未設定"
+    )
     return (
         f"{guest['name']}，電話後五碼 {phone_last5}\n"
         f"桌次：{table_name}\n"
+        f"桌號：{table_number_text}\n"
         f"出席總人數：{attendee_count} 位"
     )
 
@@ -324,7 +370,23 @@ def _lookup_seat_video(
     total_adults = int(guest.get("total_adults") or 0)
     total_children = int(guest.get("total_children") or 0)
     attendee_count = total_adults + total_children
-    video_filename = _table_video_filename(supabase, guest.get("allocated_table"))
+    table_setting = _table_setting(supabase, guest.get("allocated_table"))
+    table_number = _table_number(guest.get("allocated_table"), table_setting)
+    if table_number is None and guest.get("allocated_table") not in (None, "主桌"):
+        layout_video_key = _table_layout_seat_video_key(
+            supabase,
+            guest.get("allocated_table"),
+        )
+        if layout_video_key:
+            table_number = _table_number(
+                guest.get("allocated_table"),
+                {"seat_video_key": layout_video_key},
+            )
+    video_filename = _table_video_filename(
+        supabase,
+        guest.get("allocated_table"),
+        table_setting,
+    )
     video_url = None
     preview_image_url = None
     line_video_message = None
@@ -346,9 +408,15 @@ def _lookup_seat_video(
             "total_children": total_children,
             "attendee_count": attendee_count,
             "allocated_table": guest.get("allocated_table"),
+            "table_number": table_number,
             "phone_last5": payload.phone_last5,
         },
-        "message_text": _seat_message_text(guest, payload.phone_last5, attendee_count),
+        "message_text": _seat_message_text(
+            guest,
+            payload.phone_last5,
+            attendee_count,
+            table_number,
+        ),
         "video_filename": video_filename,
         "video_url": video_url,
         "preview_image_url": preview_image_url,

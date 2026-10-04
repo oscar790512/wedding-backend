@@ -3,10 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+
+from seat_map_layout import MAIN_TABLE, TABLES
 
 
 WIDTH = 540
@@ -17,40 +20,6 @@ FRAME_COUNT = FPS * SECONDS
 BACKGROUND = (244, 242, 234)
 HIGHLIGHT = (255, 214, 94)
 HIGHLIGHT_DARK = (160, 105, 48)
-
-
-# Coordinates are measured against /Users/oscar/wedding-system/wedding_seats.jpg
-# at 1076 x 1522. The uploaded floor plan has 27 regular tables plus the main table.
-TABLE_POSITIONS = [
-    {"number": 1, "x": 232, "y": 379, "radius": 58, "table_name": "凍齡男神女神"},
-    {"number": 2, "x": 850, "y": 379, "radius": 58, "table_name": "男方家人"},
-    {"number": 3, "x": 232, "y": 525, "radius": 58, "table_name": "六腳鄉黃氏親家"},
-    {"number": 4, "x": 418, "y": 548, "radius": 58, "table_name": "看著我長大"},
-    {"number": 5, "x": 669, "y": 548, "radius": 58, "table_name": "男方家人3"},
-    {"number": 6, "x": 850, "y": 525, "radius": 58, "table_name": "男方家人2"},
-    {"number": 7, "x": 232, "y": 672, "radius": 58, "table_name": "沒有血緣關係的姊妹"},
-    {"number": 8, "x": 418, "y": 674, "radius": 58, "table_name": "我愛萬金萬金愛我"},
-    {"number": 9, "x": 669, "y": 674, "radius": 58, "table_name": "男方家人5"},
-    {"number": 10, "x": 850, "y": 671, "radius": 58, "table_name": "男方家人4"},
-    {"number": 11, "x": 232, "y": 818, "radius": 58, "table_name": "台中SGS好夥伴"},
-    {"number": 12, "x": 418, "y": 798, "radius": 58, "table_name": "楠梓國中寶貝們"},
-    {"number": 13, "x": 669, "y": 798, "radius": 58, "table_name": "男方同事"},
-    {"number": 14, "x": 850, "y": 818, "radius": 58, "table_name": "男方長輩好友"},
-    {"number": 15, "x": 232, "y": 964, "radius": 58, "table_name": "SGS好夥伴"},
-    {"number": 16, "x": 418, "y": 928, "radius": 58, "table_name": "一輩子的楠中306"},
-    {"number": 17, "x": 669, "y": 924, "radius": 58, "table_name": "男方同事2"},
-    {"number": 18, "x": 850, "y": 964, "radius": 58, "table_name": "男方好友1"},
-    {"number": 19, "x": 232, "y": 1110, "radius": 58, "table_name": "男方研究所同學"},
-    {"number": 20, "x": 418, "y": 1048, "radius": 58, "table_name": "屏科生科不顆顆"},
-    {"number": 21, "x": 669, "y": 1053, "radius": 58, "table_name": "男方同事3"},
-    {"number": 22, "x": 850, "y": 1110, "radius": 58, "table_name": "男方好友2"},
-    {"number": 23, "x": 232, "y": 1256, "radius": 58, "table_name": "預備桌"},
-    {"number": 24, "x": 418, "y": 1176, "radius": 58, "table_name": "當不成同事當永遠好麻吉"},
-    {"number": 25, "x": 670, "y": 1175, "radius": 58, "table_name": "男方同事6"},
-    {"number": 26, "x": 850, "y": 1256, "radius": 58, "table_name": "男方同事4"},
-    {"number": 27, "x": 418, "y": 1321, "radius": 58, "table_name": "男方同事5"},
-]
-MAIN_TABLE = {"number": 28, "x": 543, "y": 404, "radius": 74, "main": True}
 
 
 def ease(value: float) -> float:
@@ -108,7 +77,7 @@ def lerp(start: float, end: float, t: float) -> float:
 def frame_transform(source_width: int, source_height: int, target: dict, frame_index: int) -> tuple[float, float, float]:
     intro_scale = min(WIDTH / source_width, HEIGHT / source_height)
     zoom_t = ease((frame_index - 8) / 24)
-    target_scale = 1.25 if target.get("main") else 1.35
+    target_scale = 0.78 if target.get("main") else 0.84
     scale = lerp(intro_scale, target_scale, zoom_t)
     center_x = lerp(source_width / 2, target["x"], zoom_t)
     center_y = lerp(source_height / 2, target["y"], zoom_t)
@@ -279,6 +248,7 @@ def render_asset(
 
     return {
         "seat_video_key": filename_stem,
+        "table_number": target.get("table_number"),
         "table_name": table_name,
         "video_filename": video_path.name,
         "preview_filename": preview_path.name,
@@ -316,8 +286,8 @@ def main() -> None:
 
     requested = args.only.strip()
     manifest = []
-    for table in TABLE_POSITIONS:
-        stem = f"table-{table['number']:02d}"
+    for table in TABLES:
+        stem = table["seat_video_key"]
         if requested and requested != stem:
             continue
         manifest.append(
@@ -350,6 +320,12 @@ def main() -> None:
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+
+        expected_stems = {item["seat_video_key"] for item in manifest}
+        for pattern in ("table-*.mp4", "table-*.png"):
+            for leftover in output_dir.glob(pattern):
+                if re.fullmatch(r"table-\d+", leftover.stem) and leftover.stem not in expected_stems:
+                    leftover.unlink()
 
     for leftover in output_dir.glob("table-*.jpg"):
         leftover.unlink()

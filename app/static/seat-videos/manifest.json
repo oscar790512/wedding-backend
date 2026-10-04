@@ -1,168 +1,189 @@
 [
   {
     "seat_video_key": "table-01",
-    "table_name": "凍齡男神女神",
+    "table_number": 1,
+    "table_name": "女方家人A",
     "video_filename": "table-01.mp4",
     "preview_filename": "table-01.png"
   },
   {
     "seat_video_key": "table-02",
-    "table_name": "男方家人",
+    "table_number": 2,
+    "table_name": "男方家人A",
     "video_filename": "table-02.mp4",
     "preview_filename": "table-02.png"
   },
   {
     "seat_video_key": "table-03",
-    "table_name": "六腳鄉黃氏親家",
+    "table_number": 3,
+    "table_name": "女方親友A",
     "video_filename": "table-03.mp4",
     "preview_filename": "table-03.png"
   },
   {
     "seat_video_key": "table-04",
-    "table_name": "看著我長大",
+    "table_number": 4,
+    "table_name": "女方家人B",
     "video_filename": "table-04.mp4",
     "preview_filename": "table-04.png"
   },
   {
     "seat_video_key": "table-05",
-    "table_name": "男方家人3",
+    "table_number": 5,
+    "table_name": "男方家人C",
     "video_filename": "table-05.mp4",
     "preview_filename": "table-05.png"
   },
   {
     "seat_video_key": "table-06",
-    "table_name": "男方家人2",
+    "table_number": 6,
+    "table_name": "男方家人B",
     "video_filename": "table-06.mp4",
     "preview_filename": "table-06.png"
   },
   {
     "seat_video_key": "table-07",
-    "table_name": "沒有血緣關係的姊妹",
+    "table_number": 7,
+    "table_name": "新娘朋友A",
     "video_filename": "table-07.mp4",
     "preview_filename": "table-07.png"
   },
   {
     "seat_video_key": "table-08",
-    "table_name": "我愛萬金萬金愛我",
+    "table_number": 8,
+    "table_name": "女方家人C",
     "video_filename": "table-08.mp4",
     "preview_filename": "table-08.png"
   },
   {
     "seat_video_key": "table-09",
-    "table_name": "男方家人5",
+    "table_number": 9,
+    "table_name": "男方家人E",
     "video_filename": "table-09.mp4",
     "preview_filename": "table-09.png"
   },
   {
     "seat_video_key": "table-10",
-    "table_name": "男方家人4",
+    "table_number": 10,
+    "table_name": "男方家人D",
     "video_filename": "table-10.mp4",
     "preview_filename": "table-10.png"
   },
   {
     "seat_video_key": "table-11",
-    "table_name": "台中SGS好夥伴",
+    "table_number": 11,
+    "table_name": "新娘同事A",
     "video_filename": "table-11.mp4",
     "preview_filename": "table-11.png"
   },
   {
     "seat_video_key": "table-12",
-    "table_name": "楠梓國中寶貝們",
+    "table_number": 12,
+    "table_name": "新娘國中同學A",
     "video_filename": "table-12.mp4",
     "preview_filename": "table-12.png"
   },
   {
     "seat_video_key": "table-13",
-    "table_name": "男方同事",
+    "table_number": 13,
+    "table_name": "新郎同事A",
     "video_filename": "table-13.mp4",
     "preview_filename": "table-13.png"
   },
   {
     "seat_video_key": "table-14",
+    "table_number": 14,
     "table_name": "男方長輩好友",
     "video_filename": "table-14.mp4",
     "preview_filename": "table-14.png"
   },
   {
     "seat_video_key": "table-15",
-    "table_name": "SGS好夥伴",
+    "table_number": 15,
+    "table_name": "新娘同事B",
     "video_filename": "table-15.mp4",
     "preview_filename": "table-15.png"
   },
   {
     "seat_video_key": "table-16",
-    "table_name": "一輩子的楠中306",
+    "table_number": 16,
+    "table_name": "新娘國中同學B",
     "video_filename": "table-16.mp4",
     "preview_filename": "table-16.png"
   },
   {
     "seat_video_key": "table-17",
-    "table_name": "男方同事2",
+    "table_number": 17,
+    "table_name": "新郎同事B",
     "video_filename": "table-17.mp4",
     "preview_filename": "table-17.png"
   },
   {
     "seat_video_key": "table-18",
-    "table_name": "男方好友1",
+    "table_number": 18,
+    "table_name": "新郎好友A",
     "video_filename": "table-18.mp4",
     "preview_filename": "table-18.png"
   },
   {
     "seat_video_key": "table-19",
-    "table_name": "男方研究所同學",
+    "table_number": 19,
+    "table_name": "新郎研究所同學",
     "video_filename": "table-19.mp4",
     "preview_filename": "table-19.png"
   },
   {
     "seat_video_key": "table-20",
-    "table_name": "屏科生科不顆顆",
+    "table_number": 20,
+    "table_name": "新娘大學同學",
     "video_filename": "table-20.mp4",
     "preview_filename": "table-20.png"
   },
   {
     "seat_video_key": "table-21",
-    "table_name": "男方同事3",
+    "table_number": 21,
+    "table_name": "新郎同事C",
     "video_filename": "table-21.mp4",
     "preview_filename": "table-21.png"
   },
   {
     "seat_video_key": "table-22",
-    "table_name": "男方好友2",
+    "table_number": 22,
+    "table_name": "新郎好友B",
     "video_filename": "table-22.mp4",
     "preview_filename": "table-22.png"
   },
   {
     "seat_video_key": "table-23",
+    "table_number": 23,
     "table_name": "預備桌",
     "video_filename": "table-23.mp4",
     "preview_filename": "table-23.png"
   },
   {
     "seat_video_key": "table-24",
-    "table_name": "當不成同事當永遠好麻吉",
+    "table_number": 24,
+    "table_name": "新娘朋友B",
     "video_filename": "table-24.mp4",
     "preview_filename": "table-24.png"
   },
   {
     "seat_video_key": "table-25",
-    "table_name": "男方同事6",
+    "table_number": 25,
+    "table_name": "新郎同事E",
     "video_filename": "table-25.mp4",
     "preview_filename": "table-25.png"
   },
   {
     "seat_video_key": "table-26",
-    "table_name": "男方同事4",
+    "table_number": 26,
+    "table_name": "新郎同事D",
     "video_filename": "table-26.mp4",
     "preview_filename": "table-26.png"
   },
   {
-    "seat_video_key": "table-27",
-    "table_name": "男方同事5",
-    "video_filename": "table-27.mp4",
-    "preview_filename": "table-27.png"
-  },
-  {
     "seat_video_key": "main-table",
+    "table_number": null,
     "table_name": "主桌",
     "video_filename": "main-table.mp4",
     "preview_filename": "main-table.png"

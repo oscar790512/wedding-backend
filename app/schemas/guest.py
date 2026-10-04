@@ -488,6 +488,7 @@ class SeatVideoGuest(BaseModel):
     total_children: int
     attendee_count: int
     allocated_table: str | None = None
+    table_number: int | None = None
     phone_last5: str
 
 
