@@ -41,6 +41,8 @@ from app.schemas.staff_user import (
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 _SEARCH_UNSAFE = re.compile(r"[,().]")
+_TABLE_SETTINGS_COLUMNS = "table_name,table_number,capacity,created_at,updated_at"
+_LEGACY_TABLE_SETTINGS_COLUMNS = "table_name,capacity,created_at,updated_at"
 
 
 def _sanitize_search(value: str) -> str:
@@ -57,6 +59,89 @@ def _generate_checkin_token() -> str:
 
 def _create_unique_checkin_token() -> str:
     return _generate_checkin_token()
+
+
+def _is_missing_table_number_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "table_number" in message and (
+        "column" in message
+        or "schema cache" in message
+        or "pgrst204" in message
+        or "42703" in message
+    )
+
+
+def _with_default_table_number(rows: list[dict] | None) -> list[dict]:
+    return [
+        {
+            **row,
+            "table_number": row.get("table_number"),
+        }
+        for row in rows or []
+    ]
+
+
+def _select_table_settings(supabase, columns: str):
+    return (
+        supabase.table("table_settings")
+        .select(columns)
+        .order("created_at")
+    )
+
+
+def _read_table_settings(supabase) -> list[dict]:
+    try:
+        response = execute_read(_select_table_settings(supabase, _TABLE_SETTINGS_COLUMNS))
+    except Exception as exc:
+        if not _is_missing_table_number_error(exc):
+            raise
+        response = execute_read(_select_table_settings(supabase, _LEGACY_TABLE_SETTINGS_COLUMNS))
+
+    return _with_default_table_number(response.data)
+
+
+def _read_table_setting_by_name(supabase, table_name: str) -> dict | None:
+    try:
+        response = execute_read(
+            supabase.table("table_settings")
+            .select(_TABLE_SETTINGS_COLUMNS)
+            .eq("table_name", table_name)
+            .limit(1)
+        )
+    except Exception as exc:
+        if not _is_missing_table_number_error(exc):
+            raise
+        response = execute_read(
+            supabase.table("table_settings")
+            .select(_LEGACY_TABLE_SETTINGS_COLUMNS)
+            .eq("table_name", table_name)
+            .limit(1)
+        )
+
+    rows = _with_default_table_number(response.data)
+    return rows[0] if rows else None
+
+
+def _upsert_table_setting(supabase, data: dict):
+    try:
+        return (
+            supabase.table("table_settings")
+            .upsert(data, on_conflict="table_name")
+            .execute()
+        )
+    except Exception as exc:
+        if "table_number" not in data or not _is_missing_table_number_error(exc):
+            raise
+        legacy_data = {
+            key: value
+            for key, value in data.items()
+            if key != "table_number"
+        }
+        return (
+            supabase.table("table_settings")
+            .upsert(legacy_data, on_conflict="table_name")
+            .execute()
+        )
 
 
 def _normalized_path_username(username: str) -> str:
@@ -489,13 +574,7 @@ def increment_cron_counter(
 def list_table_settings(
     _admin: dict = Depends(get_current_admin),
 ) -> list[TableSettingResponse]:
-    response = execute_read(
-        get_supabase()
-        .table("table_settings")
-        .select("table_name,table_number,capacity,created_at,updated_at")
-        .order("created_at")
-    )
-    return response.data or []
+    return _read_table_settings(get_supabase())
 
 
 @router.post("/table-settings", response_model=TableSettingResponse)
@@ -506,18 +585,13 @@ def upsert_table_setting(
     data = payload.model_dump(mode="json", exclude_unset=True)
     data["updated_at"] = _utc_now()
 
-    response = (
-        get_supabase()
-        .table("table_settings")
-        .upsert(data, on_conflict="table_name")
-        .execute()
-    )
+    response = _upsert_table_setting(get_supabase(), data)
     if not response.data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save table setting",
         )
-    return response.data[0]
+    return _with_default_table_number(response.data)[0]
 
 
 @router.get("/table-layout", response_model=TableLayoutResponse)
@@ -525,11 +599,7 @@ def get_table_layout(
     _admin: dict = Depends(get_current_admin),
 ) -> TableLayoutResponse:
     supabase = get_supabase()
-    table_response = execute_read(
-        supabase.table("table_settings")
-        .select("table_name,table_number,capacity,created_at,updated_at")
-        .order("created_at")
-    )
+    tables = _read_table_settings(supabase)
     slot_response = execute_read(
         supabase.table("table_layout_slots")
         .select("id,layout_name,column_index,position_index,table_name,created_at,updated_at")
@@ -538,7 +608,6 @@ def get_table_layout(
         .order("position_index")
     )
 
-    tables = table_response.data or []
     slots = slot_response.data or []
     placed_table_names = {
         slot.get("table_name")
@@ -649,15 +718,9 @@ def rename_table_setting(
         )
 
     if payload.old_table_name == payload.new_table_name:
-        response = execute_read(
-            get_supabase()
-            .table("table_settings")
-            .select("table_name,table_number,capacity,created_at,updated_at")
-            .eq("table_name", payload.old_table_name)
-            .limit(1)
-        )
-        if response.data:
-            return response.data[0]
+        setting = _read_table_setting_by_name(get_supabase(), payload.old_table_name)
+        if setting:
+            return setting
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Table setting not found",
@@ -677,14 +740,9 @@ def rename_table_setting(
         )
 
     updated_at = _utc_now()
-    current = execute_read(
-        supabase.table("table_settings")
-        .select("table_name,table_number,capacity,created_at,updated_at")
-        .eq("table_name", payload.old_table_name)
-        .limit(1)
-    )
+    current = _read_table_setting_by_name(supabase, payload.old_table_name)
 
-    if not current.data:
+    if not current:
         setting_response = (
             supabase.table("table_settings")
             .insert(

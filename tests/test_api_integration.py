@@ -175,6 +175,8 @@ class FakeQuery:
             }
             return SimpleNamespace(data=[merged])
         if self.operation == "upsert":
+            if self.supabase.upsert_errors:
+                raise self.supabase.upsert_errors.pop(0)
             self.supabase.upserted_payload = deepcopy(self.payload)
             return SimpleNamespace(data=[deepcopy(self.payload)])
         if self.operation == "delete":
@@ -191,11 +193,13 @@ class FakeSupabase:
         update_base=None,
         table_data=None,
         select_errors=None,
+        upsert_errors=None,
     ):
         self.select_data = select_data or []
         self.update_base = update_base or {}
         self.table_data = table_data or {}
         self.select_errors = list(select_errors or [])
+        self.upsert_errors = list(upsert_errors or [])
         self.select_execute_calls = 0
         self.inserted_payload = None
         self.updated_payload = None
@@ -1180,6 +1184,27 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         self.assertEqual(fake_supabase.upserted_payload["table_number"], 7)
         self.assertEqual(response.json()["table_number"], 7)
 
+    def test_table_setting_upsert_falls_back_before_table_number_migration(self):
+        fake_supabase = FakeSupabase(
+            upsert_errors=[
+                RuntimeError("Could not find the 'table_number' column of 'table_settings'"),
+            ],
+        )
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.post(
+                "/api/admin/table-settings",
+                json={
+                    "table_name": "親友桌",
+                    "table_number": 7,
+                    "capacity": 12,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("table_number", fake_supabase.upserted_payload)
+        self.assertIsNone(response.json()["table_number"])
+
     def test_table_layout_returns_slots_and_unplaced_tables(self):
         fake_supabase = FakeSupabase(
             table_data={
@@ -1220,6 +1245,27 @@ class WeddingApiIntegrationTest(unittest.TestCase):
             ["第 2 桌"],
         )
         self.assertEqual(response.json()["unplaced_tables"][0]["table_number"], 2)
+
+    def test_table_layout_falls_back_before_table_number_migration(self):
+        fake_supabase = FakeSupabase(
+            select_errors=[
+                RuntimeError("Could not find the 'table_number' column of 'table_settings'"),
+            ],
+            table_data={
+                "table_settings": [
+                    {"table_name": "主桌", "capacity": 12},
+                    {"table_name": "第 1 桌", "capacity": 12},
+                ],
+                "table_layout_slots": [],
+            },
+        )
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.get("/api/admin/table-layout")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["unplaced_tables"][0]["table_name"], "第 1 桌")
+        self.assertIsNone(response.json()["unplaced_tables"][0]["table_number"])
 
     def test_table_layout_replace_rejects_duplicate_table_assignment(self):
         fake_supabase = FakeSupabase()
