@@ -492,7 +492,7 @@ def list_table_settings(
     response = execute_read(
         get_supabase()
         .table("table_settings")
-        .select("table_name,capacity,created_at,updated_at")
+        .select("table_name,table_number,capacity,created_at,updated_at")
         .order("created_at")
     )
     return response.data or []
@@ -503,7 +503,7 @@ def upsert_table_setting(
     payload: TableSettingUpsert,
     _admin: dict = Depends(get_current_admin),
 ) -> TableSettingResponse:
-    data = payload.model_dump(mode="json")
+    data = payload.model_dump(mode="json", exclude_unset=True)
     data["updated_at"] = _utc_now()
 
     response = (
@@ -527,7 +527,7 @@ def get_table_layout(
     supabase = get_supabase()
     table_response = execute_read(
         supabase.table("table_settings")
-        .select("table_name,capacity,created_at,updated_at")
+        .select("table_name,table_number,capacity,created_at,updated_at")
         .order("created_at")
     )
     slot_response = execute_read(
@@ -652,7 +652,7 @@ def rename_table_setting(
         response = execute_read(
             get_supabase()
             .table("table_settings")
-            .select("table_name,capacity,created_at,updated_at")
+            .select("table_name,table_number,capacity,created_at,updated_at")
             .eq("table_name", payload.old_table_name)
             .limit(1)
         )
@@ -679,7 +679,7 @@ def rename_table_setting(
     updated_at = _utc_now()
     current = execute_read(
         supabase.table("table_settings")
-        .select("table_name,capacity,created_at,updated_at")
+        .select("table_name,table_number,capacity,created_at,updated_at")
         .eq("table_name", payload.old_table_name)
         .limit(1)
     )

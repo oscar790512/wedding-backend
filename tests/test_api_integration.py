@@ -1163,13 +1163,30 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "Only attending guests can be checked in")
         self.assertIsNone(fake_supabase.updated_payload)
 
+    def test_table_setting_upsert_saves_table_number(self):
+        fake_supabase = FakeSupabase()
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.post(
+                "/api/admin/table-settings",
+                json={
+                    "table_name": "親友桌",
+                    "table_number": 7,
+                    "capacity": 12,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fake_supabase.upserted_payload["table_number"], 7)
+        self.assertEqual(response.json()["table_number"], 7)
+
     def test_table_layout_returns_slots_and_unplaced_tables(self):
         fake_supabase = FakeSupabase(
             table_data={
                 "table_settings": [
                     {"table_name": "主桌", "capacity": 12},
-                    {"table_name": "第 1 桌", "capacity": 12},
-                    {"table_name": "第 2 桌", "capacity": 12},
+                    {"table_name": "第 1 桌", "table_number": 1, "capacity": 12},
+                    {"table_name": "第 2 桌", "table_number": 2, "capacity": 12},
                 ],
                 "table_layout_slots": [
                     {
@@ -1202,6 +1219,7 @@ class WeddingApiIntegrationTest(unittest.TestCase):
             [table["table_name"] for table in response.json()["unplaced_tables"]],
             ["第 2 桌"],
         )
+        self.assertEqual(response.json()["unplaced_tables"][0]["table_number"], 2)
 
     def test_table_layout_replace_rejects_duplicate_table_assignment(self):
         fake_supabase = FakeSupabase()

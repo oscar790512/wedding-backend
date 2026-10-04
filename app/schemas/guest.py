@@ -408,6 +408,7 @@ class GuestCheckinUpdate(AdminGuestUpdate):
 
 class TableSettingBase(BaseModel):
     table_name: str = Field(min_length=1, max_length=100)
+    table_number: int | None = Field(default=None, ge=1, le=999)
     capacity: int = Field(default=12, ge=1, le=999)
 
     @field_validator("table_name")
