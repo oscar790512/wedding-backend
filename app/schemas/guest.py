@@ -517,6 +517,9 @@ class AdminSummary(BaseModel):
     child_seats_count: int
     decline_blessing_only_count: int
     decline_request_cake_count: int
+    cake_total_count: int = 0
+    groom_cake_count: int = 0
+    bride_cake_count: int = 0
     total_gift_amount: Decimal
     arrived_count: int
     undecided_count: int = 0

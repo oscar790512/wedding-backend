@@ -890,6 +890,45 @@ class WeddingApiIntegrationTest(unittest.TestCase):
         self.assertEqual(fake_supabase.last_order_args, ("created_at",))
         self.assertEqual(fake_supabase.last_order_kwargs, {"desc": True})
 
+    def test_admin_summary_counts_cake_boxes_by_side(self):
+        guests = [
+            guest_record(
+                id="00000000-0000-4000-8000-000000000101",
+                status="attend",
+                guest_category="男方朋友/同學",
+                cake_status="pending_pickup",
+            ),
+            guest_record(
+                id="00000000-0000-4000-8000-000000000102",
+                status="attend",
+                guest_category="女方家人",
+                cake_status="pickup",
+            ),
+            guest_record(
+                id="00000000-0000-4000-8000-000000000103",
+                status="decline",
+                decline_response="request_cake",
+                guest_category="女方朋友/同學",
+                cake_status="pending_send",
+            ),
+            guest_record(
+                id="00000000-0000-4000-8000-000000000104",
+                status="decline",
+                decline_response="blessing_only",
+                guest_category="男方其他",
+                cake_status="not_required",
+            ),
+        ]
+        fake_supabase = FakeSupabase(select_data=guests)
+
+        with patch("app.routers.admin.get_supabase", return_value=fake_supabase):
+            response = self.client.get("/api/admin/summary")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["cake_total_count"], 3)
+        self.assertEqual(response.json()["groom_cake_count"], 1)
+        self.assertEqual(response.json()["bride_cake_count"], 2)
+
     def test_admin_can_update_rsvp_deadline(self):
         fake_supabase = FakeSupabase()
 

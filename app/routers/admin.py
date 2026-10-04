@@ -804,6 +804,13 @@ def get_summary(_admin: dict = Depends(get_current_admin)) -> AdminSummary:
 
     attending = [g for g in guests if g["status"] == "attend"]
     declined = [g for g in guests if g["status"] == "decline"]
+    cake_guests = [
+        g
+        for g in guests
+        if g.get("cake_status") != "not_required"
+        or g.get("status") == "attend"
+        or g.get("decline_response") == "request_cake"
+    ]
     total_adults = sum(g["total_adults"] for g in attending)
     total_children = sum(g["total_children"] for g in attending)
 
@@ -828,6 +835,17 @@ def get_summary(_admin: dict = Depends(get_current_admin)) -> AdminSummary:
         ),
         decline_request_cake_count=sum(
             1 for g in declined if g.get("decline_response") == "request_cake"
+        ),
+        cake_total_count=len(cake_guests),
+        groom_cake_count=sum(
+            1
+            for g in cake_guests
+            if str(g.get("guest_category") or "").startswith("男方")
+        ),
+        bride_cake_count=sum(
+            1
+            for g in cake_guests
+            if str(g.get("guest_category") or "").startswith("女方")
         ),
         total_gift_amount=sum(
             (Decimal(str(g.get("gift_amount") or 0)) for g in guests),
