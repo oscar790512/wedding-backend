@@ -2,6 +2,7 @@ import base64
 import logging
 import smtplib
 import time
+import httpx
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -10,7 +11,7 @@ from postgrest.exceptions import APIError
 
 from app.auth import require_admin
 from app.config import settings
-from app.database import execute_read, get_supabase
+from app.database import execute_idempotent_write, execute_read, get_supabase
 from app.schemas.email import EmailPreviewRequest, EmailResumeRequest, EmailSendRequest, WeddingEmailContent
 from app.services.wedding_email import (
     CAMPAIGN, SmtpSetupError, build_message, preview_signature, qr_png, render_email,
@@ -66,23 +67,28 @@ def _require_smtp():
 
 def _run_batch(batch_id):
     db = get_supabase()
+    phase = "load_batch"
     try:
         batch = _batch(batch_id)
         if batch["sender"] != settings.smtp_username.lower():
             raise ValueError("寄件帳號已變更，請確認後使用原帳號繼續寄送")
         content = WeddingEmailContent(**batch["content"])
-        db.table("wedding_email_batches").update({"last_error": None}).eq("id", batch_id).execute()
+        execute_idempotent_write(db.table("wedding_email_batches").update({"last_error": None}).eq("id", batch_id))
         while True:
-            result = db.rpc("claim_wedding_email", {
+            phase = "claim"
+            claim_request = db.rpc("claim_wedding_email_v2", {
                 "p_batch": batch_id, "p_sender": batch["sender"],
                 "p_limit": max(1, settings.smtp_daily_limit),
                 "p_interval": max(1.0, settings.smtp_interval_seconds),
-            }).execute().data
+                "p_request_id": str(uuid4()),
+            })
+            # Only retry this RPC because the DB replays the same reservation by ID.
+            result = execute_idempotent_write(claim_request).data
             if result["state"] == "wait":
                 time.sleep(min(max(result["seconds"], 0.1), 10))
                 continue
             if result["state"] == "quota":
-                db.table("wedding_email_batches").update({"last_error": "已達系統滾動 24 小時寄送上限，待額度恢復後按繼續寄送。"}).eq("id", batch_id).execute()
+                execute_idempotent_write(db.table("wedding_email_batches").update({"last_error": "已達系統滾動 24 小時寄送上限，待額度恢復後按繼續寄送。"}).eq("id", batch_id))
                 return
             if result["state"] == "empty":
                 return
@@ -90,15 +96,20 @@ def _run_batch(batch_id):
             guest = {"id": delivery["guest_id"], "name": delivery["name"], "email": delivery["email"], "checkin_token": delivery["checkin_token"]}
             outcome = {"status": "sent", "error": None}
             pause = False
+            phase = "prepare_message"
             try:
                 current = _load_guests([delivery["guest_id"]])[0]
                 if current != guest:
                     raise ValueError("賓客姓名、Email 或報到碼已變更，請確認資料後再寄送")
                 message = build_message(guest, content, batch_id)
+            except httpx.TransportError:
+                outcome = {"status": "failed", "error": "暫時無法讀取賓客資料，此封尚未送出，請稍後重試。"}
+                pause = True
             except Exception:
                 outcome = {"status": "failed", "error": "賓客資料已異動或信件無法建立，請確認賓客資料後再試。"}
             else:
                 try:
+                    phase = "smtp"
                     send_message(message)
                     outcome["sent_at"] = datetime.now(timezone.utc).isoformat()
                 except smtplib.SMTPAuthenticationError:
@@ -114,14 +125,24 @@ def _run_batch(batch_id):
                     # A disconnect after DATA may mean Gmail accepted the message.
                     outcome = {"status": "unknown", "error": "無法確認 Gmail 是否已接受，請先查看寄件備份，避免重寄。"}
                     pause = True
-            db.table("wedding_email_deliveries").update(outcome).eq("id", delivery["id"]).execute()
+            phase = "persist_result"
+            result_update = db.table("wedding_email_deliveries").update(outcome).eq("id", delivery["id"])
+            if delivery.get("attempted_at"):
+                result_update = result_update.eq("attempted_at", delivery["attempted_at"])
+            # Retrying this guarded assignment cannot submit another SMTP message.
+            execute_idempotent_write(result_update)
             if pause:
-                db.table("wedding_email_batches").update({"last_error": outcome["error"]}).eq("id", batch_id).execute()
+                execute_idempotent_write(db.table("wedding_email_batches").update({"last_error": outcome["error"]}).eq("id", batch_id))
                 return
-    except Exception:
-        logger.error("Wedding email batch stopped; inspect delivery states. Batch: %s", batch_id)
+    except Exception as exc:
+        logger.error("Wedding email batch stopped. Batch: %s Phase: %s ErrorType: %s", batch_id, phase, type(exc).__name__)
         try:
-            db.table("wedding_email_batches").update({"last_error": "寄送已暫停，請檢查寄送狀態後繼續；狀態待確認的信件不會自動重寄。"}).eq("id", batch_id).execute()
+            message = "寄送已暫停，請檢查寄送狀態後繼續；狀態待確認的信件不會自動重寄。"
+            if phase == "persist_result":
+                message = "寄送結果暫時無法儲存，請先確認 Gmail 寄件備份，避免重複寄送；系統會持續更新狀態。"
+            elif phase == "claim":
+                message = "領取寄送任務時資料庫連線中斷，請先更新狀態；已領取但未確認的項目不會自動重寄。"
+            execute_idempotent_write(db.table("wedding_email_batches").update({"last_error": message}).eq("id", batch_id))
         except Exception:
             pass
 
@@ -173,10 +194,17 @@ def send(payload: EmailSendRequest, background: BackgroundTasks, admin=Depends(r
 def batch_status(batch_id: UUID, _admin=Depends(require_admin)):
     batch = _batch(batch_id)
     stale_before = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-    get_supabase().table("wedding_email_deliveries").update({
-        "status": "unknown", "error": "寄送中斷，請先至 Gmail 寄件備份確認，勿直接重寄。",
-    }).eq("batch_id", str(batch_id)).eq("status", "sending").lt("attempted_at", stale_before).execute()
     deliveries = _all_rows(lambda: get_supabase().table("wedding_email_deliveries").select(PUBLIC_COLUMNS).eq("batch_id", str(batch_id)).order("id"))
+    stale_rows = [row for row in deliveries if row["status"] == "sending" and row.get("attempted_at")
+                  and datetime.fromisoformat(row["attempted_at"].replace("Z", "+00:00")) < datetime.fromisoformat(stale_before)]
+    if stale_rows:
+        outcome = {"status": "unknown", "error": "寄送中斷，請先至 Gmail 寄件備份確認，勿直接重寄。"}
+        updated = execute_idempotent_write(get_supabase().table("wedding_email_deliveries").update(outcome)
+            .eq("batch_id", str(batch_id)).eq("status", "sending").lt("attempted_at", stale_before)).data
+        changed_ids = {row["id"] for row in updated}
+        for row in deliveries:
+            if row["id"] in changed_ids:
+                row.update(outcome)
     return {"batch_id": str(batch_id), "last_error": batch["last_error"], "deliveries": deliveries}
 
 
