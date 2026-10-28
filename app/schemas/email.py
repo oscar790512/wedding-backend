@@ -11,7 +11,7 @@ class WeddingEmailContent(BaseModel):
     venue: str = Field(default="老新台菜 十全店｜2 樓 A 廳", min_length=1, max_length=300)
     address: str = Field(default="高雄市三民區十全三路 265 號", min_length=1, max_length=300)
     parking: str = Field(default="開車的朋友可先前往老新台菜停車場（德裕街與十全三路口附近），依現場人員指引停放。\n建議預留 20–30 分鐘找車位與步行；若停車場已滿，可改找周邊合法收費停車場或路邊停車格。費用與優惠請依現場公告或向餐廳確認。\n也歡迎共乘或搭乘計程車，輕鬆抵達；當天若有飲酒，請勿開車。", min_length=1, max_length=2500)
-    invitation_url: str = Field(default="https://wedding-frontend-ochre.vercel.app/invitation", max_length=1000)
+    invitation_url: str = Field(default="https://oscar-peiyu-wedding.vercel.app/invitation", max_length=1000)
     line_url: str = Field(default="https://lin.ee/PvW0Voh", max_length=1000)
     line_id: str = Field(default="@287rlhkg", min_length=1, max_length=100)
 

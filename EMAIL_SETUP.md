@@ -16,7 +16,7 @@ SMTP_PASSWORD=your-google-app-password
 SMTP_SENDER_NAME=祺元 & 姵妤
 SMTP_DAILY_LIMIT=450
 SMTP_INTERVAL_SECONDS=2
-WEDDING_INVITATION_URL=https://wedding-frontend-ochre.vercel.app/invitation
+WEDDING_INVITATION_URL=https://oscar-peiyu-wedding.vercel.app/invitation
 ```
 
 `465` 使用 SSL；`587` 使用 STARTTLS，兩種均驗證 TLS 憑證。寄件地址固定使用 SMTP 登入帳號。後端主機需允許對外連線至指定 SMTP 連接埠。部署後端時安裝更新後的 `requirements.txt`，前端照原本流程 build/deploy。

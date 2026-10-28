@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     smtp_sender_name: str = "祺元 & 姵妤"
     smtp_daily_limit: int = 450
     smtp_interval_seconds: float = 2.0
-    wedding_invitation_url: str = "https://wedding-frontend-ochre.vercel.app/invitation"
+    wedding_invitation_url: str = "https://oscar-peiyu-wedding.vercel.app/invitation"
 
 
 settings = Settings()
