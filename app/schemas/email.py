@@ -1,4 +1,5 @@
 from uuid import UUID
+from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -44,3 +45,22 @@ class EmailSendRequest(EmailPreviewRequest):
 
 class EmailResumeRequest(BaseModel):
     retry_failed: bool = False
+
+
+class EmailManualResolution(BaseModel):
+    confirmed_not_sent: bool = Field(strict=True)
+    attempted_at: datetime
+
+    @field_validator("confirmed_not_sent")
+    @classmethod
+    def explicit_confirmation(cls, value):
+        if value is not True:
+            raise ValueError("請先確認這次信件未寄出")
+        return value
+
+    @field_validator("attempted_at")
+    @classmethod
+    def timezone_required(cls, value):
+        if value.tzinfo is None:
+            raise ValueError("請使用含時區的寄送嘗試時間")
+        return value

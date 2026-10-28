@@ -12,7 +12,7 @@ from postgrest.exceptions import APIError
 from app.auth import require_admin
 from app.config import settings
 from app.database import execute_idempotent_write, execute_read, get_supabase
-from app.schemas.email import EmailPreviewRequest, EmailResumeRequest, EmailSendRequest, WeddingEmailContent
+from app.schemas.email import EmailManualResolution, EmailPreviewRequest, EmailResumeRequest, EmailSendRequest, WeddingEmailContent
 from app.services.wedding_email import (
     CAMPAIGN, SmtpSetupError, build_message, preview_signature, qr_png, render_email,
     send_message, smtp_ready, verify_preview,
@@ -21,6 +21,7 @@ from app.services.wedding_email import (
 router = APIRouter(prefix="/admin/email", tags=["email"])
 logger = logging.getLogger(__name__)
 PUBLIC_COLUMNS = "id,batch_id,guest_id,name,email,status,error,attempted_at,sent_at,created_at"
+MANUAL_NOT_SENT_ERROR = "已由管理員確認本次未寄出，可手動重試。"
 
 
 def _all_rows(query):
@@ -206,6 +207,46 @@ def batch_status(batch_id: UUID, _admin=Depends(require_admin)):
             if row["id"] in changed_ids:
                 row.update(outcome)
     return {"batch_id": str(batch_id), "last_error": batch["last_error"], "deliveries": deliveries}
+
+
+@router.post("/batches/{batch_id}/deliveries/{delivery_id}/resolve")
+def resolve_unconfirmed_delivery(batch_id: UUID, delivery_id: UUID, payload: EmailManualResolution,
+                                admin=Depends(require_admin)):
+    db = get_supabase()
+
+    def load_delivery():
+        rows = execute_read(db.table("wedding_email_deliveries").select(PUBLIC_COLUMNS)
+            .eq("id", str(delivery_id)).eq("batch_id", str(batch_id)).limit(1)).data
+        if not rows:
+            raise HTTPException(404, "找不到這筆寄送紀錄")
+        return rows[0]
+
+    def same_attempt(row):
+        return bool(row.get("attempted_at")) and datetime.fromisoformat(
+            row["attempted_at"].replace("Z", "+00:00")) == payload.attempted_at
+
+    row = load_delivery()
+    response = {"id": str(delivery_id), "batch_id": str(batch_id), "status": "failed"}
+    if not same_attempt(row):
+        raise HTTPException(409, "寄送嘗試已變更，請更新狀態後重新確認")
+    # A lost response can be safely replayed until another attempt starts.
+    if row["status"] == "failed" and row.get("error") == MANUAL_NOT_SENT_ERROR:
+        return response
+    if row["status"] != "unknown":
+        raise HTTPException(409, "只有待人工確認的信件可以標記未寄出，請更新狀態")
+    updated = execute_idempotent_write(db.table("wedding_email_deliveries")
+        .update({"status": "failed", "error": MANUAL_NOT_SENT_ERROR})
+        .eq("id", str(delivery_id)).eq("batch_id", str(batch_id))
+        .eq("status", "unknown").eq("attempted_at", payload.attempted_at.isoformat())).data
+    if not updated:
+        current = load_delivery()
+        if not (same_attempt(current) and current["status"] == "failed"
+                and current.get("error") == MANUAL_NOT_SENT_ERROR):
+            raise HTTPException(409, "寄送狀態已變更，請更新狀態後重新確認")
+    logger.info("Email attempt manually confirmed not sent. Delivery: %s Actor: %s Attempt: %s",
+                delivery_id, admin["username"], payload.attempted_at.isoformat())
+    # No SMTP or background task: the operator must separately request a retry.
+    return response
 
 
 @router.post("/batches/{batch_id}/resume", status_code=202)
