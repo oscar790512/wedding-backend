@@ -36,11 +36,13 @@ class EmailPreviewRequest(BaseModel):
     guest_ids: list[UUID] = Field(min_length=1, max_length=2000)
     content: WeddingEmailContent
     preview_guest_id: UUID
+    resend_delivery_id: UUID | None = None
 
 
 class EmailSendRequest(EmailPreviewRequest):
     preview_token: str = Field(max_length=200)
     batch_id: UUID
+    resend_confirmed: bool = Field(default=False, strict=True)
 
 
 class EmailResumeRequest(BaseModel):

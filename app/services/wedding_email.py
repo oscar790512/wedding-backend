@@ -16,7 +16,7 @@ import qrcode
 from app.config import settings
 
 CAMPAIGN = "wedding-2026-11-08"
-TEMPLATE_VERSION = 2
+TEMPLATE_VERSION = 3
 
 
 class SmtpSetupError(Exception):
@@ -79,16 +79,16 @@ def render_email(guest: dict, content, image_src="cid:checkin-qr") -> tuple[str,
     return html, text
 
 
-def preview_signature(batch_id, expires, guests, content):
-    snapshot = {"batch_id": str(batch_id), "expires": expires, "guests": guests, "content": content.model_dump(), "version": TEMPLATE_VERSION, "sender": settings.smtp_username}
+def preview_signature(batch_id, expires, guests, content, resend=None):
+    snapshot = {"batch_id": str(batch_id), "expires": expires, "guests": guests, "content": content.model_dump(), "version": TEMPLATE_VERSION, "sender": settings.smtp_username, "resend": resend}
     value = json.dumps(snapshot, sort_keys=True, ensure_ascii=False).encode()
     return f"{expires}." + hmac.new(settings.jwt_secret.encode(), value, hashlib.sha256).hexdigest()
 
 
-def verify_preview(token, batch_id, guests, content):
+def verify_preview(token, batch_id, guests, content, resend=None):
     try:
         expires = int(token.split(".")[0])
-        return expires >= int(time.time()) and hmac.compare_digest(token, preview_signature(batch_id, expires, guests, content))
+        return expires >= int(time.time()) and hmac.compare_digest(token, preview_signature(batch_id, expires, guests, content, resend))
     except (ValueError, TypeError):
         return False
 

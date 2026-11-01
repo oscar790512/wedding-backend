@@ -68,6 +68,22 @@ def _batch(batch_id):
     return rows[0]
 
 
+def _resend_context(payload, allow_superseded=False):
+    if payload.resend_delivery_id is None:
+        return None
+    if len(payload.guest_ids) != 1 or payload.guest_ids[0] != payload.preview_guest_id:
+        raise HTTPException(422, "重新寄送需逐位預覽與確認")
+    rows = execute_read(get_supabase().table("wedding_email_deliveries")
+        .select(PUBLIC_COLUMNS + ",superseded_at").eq("id", str(payload.resend_delivery_id))
+        .eq("campaign", CAMPAIGN).eq("guest_id", str(payload.preview_guest_id)).limit(1)).data
+    if not rows:
+        raise HTTPException(404, "找不到原本的寄送紀錄")
+    row = rows[0]
+    if row["status"] != "sent" or (row.get("superseded_at") and not allow_superseded):
+        raise HTTPException(409, "只有目前 Gmail 已接受的紀錄可重新寄送；請更新狀態，待確認者需先人工查證")
+    return {key: row.get(key) for key in ("id", "batch_id", "email", "status", "attempted_at", "sent_at")}
+
+
 def _require_smtp():
     if not smtp_ready():
         if settings.email_relay_url:
@@ -173,10 +189,10 @@ def overview(_admin=Depends(require_admin)):
     response = {"smtp_ready": smtp_ready(), "sender": settings.smtp_username, "daily_limit": settings.smtp_daily_limit,
                 "content": content.model_dump(), "storage_ready": True, "deliveries": [], "batches": []}
     try:
-        response["deliveries"] = _all_rows(lambda: get_supabase().table("wedding_email_deliveries").select(PUBLIC_COLUMNS).eq("campaign", CAMPAIGN).order("id"))
+        response["deliveries"] = _all_rows(lambda: get_supabase().table("wedding_email_deliveries").select(PUBLIC_COLUMNS).eq("campaign", CAMPAIGN).is_("superseded_at", "null").order("id"))
         response["batches"] = execute_read(get_supabase().table("wedding_email_batches").select("id,created_at,last_error,sender").eq("campaign", CAMPAIGN).order("created_at", desc=True).limit(20)).data
     except APIError as exc:
-        if exc.code not in ("PGRST205", "42P01"):
+        if exc.code not in ("PGRST205", "42P01", "PGRST204", "42703"):
             raise
         response["storage_ready"] = False
     return response
@@ -185,6 +201,7 @@ def overview(_admin=Depends(require_admin)):
 @router.post("/preview")
 def preview(payload: EmailPreviewRequest, _admin=Depends(require_admin)):
     guests = _load_guests(payload.guest_ids)
+    resend = _resend_context(payload)
     guest = next((row for row in guests if row["id"] == str(payload.preview_guest_id)), None)
     if not guest:
         raise HTTPException(422, "預覽對象必須在收件名單內")
@@ -192,23 +209,37 @@ def preview(payload: EmailPreviewRequest, _admin=Depends(require_admin)):
     expires = int(time.time()) + 1800
     image_src = "data:image/png;base64," + base64.b64encode(qr_png(guest["checkin_token"])).decode()
     html, text = render_email(guest, payload.content, image_src)
-    return {"batch_id": str(batch_id), "preview_token": preview_signature(batch_id, expires, guests, payload.content),
+    return {"batch_id": str(batch_id), "preview_token": preview_signature(batch_id, expires, guests, payload.content, resend),
             "html": html, "text": text, "subject": payload.content.subject, "recipient": {"name": guest["name"], "email": guest["email"]},
-            "total": len(guests), "expires_at": expires}
+            "total": len(guests), "expires_at": expires,
+            "resend": {"previous_email": resend["email"]} if resend else None}
 
 
 @router.post("/send", status_code=202)
 def send(payload: EmailSendRequest, background: BackgroundTasks, admin=Depends(require_admin)):
     _require_smtp()
+    if payload.resend_delivery_id and not payload.resend_confirmed:
+        raise HTTPException(422, "請明確確認重新寄送，原信件可能已經送達")
     guests = _load_guests(payload.guest_ids)
-    if not verify_preview(payload.preview_token, payload.batch_id, guests, payload.content):
+    resend = _resend_context(payload, allow_superseded=True)
+    if not verify_preview(payload.preview_token, payload.batch_id, guests, payload.content, resend):
         raise HTTPException(409, "預覽已過期，或名單／信件內容已變更，請重新預覽後再寄送")
     batch_content = {**payload.content.model_dump(), "seating_by_guest": {
         guest["id"]: {key: guest.get(key) for key in ("allocated_table", "table_number")} for guest in guests
     }}
-    get_supabase().rpc("enqueue_wedding_email", {"p_id": str(payload.batch_id), "p_campaign": CAMPAIGN,
-        "p_sender": settings.smtp_username.lower(), "p_actor": admin["username"],
-        "p_content": batch_content, "p_guests": guests}).execute()
+    params = {"p_id": str(payload.batch_id), "p_campaign": CAMPAIGN,
+              "p_sender": settings.smtp_username.lower(), "p_actor": admin["username"], "p_content": batch_content}
+    if resend:
+        batch_content["resend_of"] = resend
+        try:
+            execute_idempotent_write(get_supabase().rpc("enqueue_wedding_email_resend", {
+                **params, "p_guest": guests[0], "p_previous": resend}))
+        except APIError as exc:
+            if exc.code != "P0001":
+                raise
+            raise HTTPException(409, "寄送紀錄已變更，請重新預覽並確認重寄") from exc
+    else:
+        get_supabase().rpc("enqueue_wedding_email", {**params, "p_guests": guests}).execute()
     background.add_task(_run_batch, str(payload.batch_id))
     return {"batch_id": str(payload.batch_id)}
 
