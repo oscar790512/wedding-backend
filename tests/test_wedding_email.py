@@ -69,10 +69,12 @@ class WeddingEmailTest(unittest.TestCase):
     def test_changed_guest_content_or_expired_preview_cannot_send(self):
         batch_id = uuid4()
         token = preview_signature(batch_id, int(time.time()) + 100, [GUEST], self.content)
-        for change in ["guest", "content", "expired"]:
+        for change in ["guest", "content", "expired", "table_name", "table_number"]:
             payload = {**self.payload(), "batch_id": str(batch_id), "preview_token": token}
             guests = [GUEST]
             if change == "guest": guests = [{**GUEST, "checkin_token": "rotated"}]
+            if change == "table_name": guests = [{**GUEST, "allocated_table": "好友桌"}]
+            if change == "table_number": guests = [{**GUEST, "table_number": 9}]
             if change == "content": payload["content"]["message"] = "changed"
             if change == "expired": payload["preview_token"] = preview_signature(batch_id, int(time.time()) - 1, [GUEST], self.content)
             with patch.object(emails, "smtp_ready", return_value=True), patch.object(emails, "_load_guests", return_value=guests), patch.object(emails, "get_supabase") as db:
@@ -96,6 +98,9 @@ class WeddingEmailTest(unittest.TestCase):
         self.assertEqual(db.rpc.call_args.args[0], "enqueue_wedding_email")
         self.assertEqual(db.rpc.call_args.args[1]["p_guests"], [GUEST])
         self.assertEqual(db.rpc.call_args.args[1]["p_id"], str(batch_id))
+        self.assertEqual(db.rpc.call_args.args[1]["p_content"]["seating_by_guest"], {
+            GUEST["id"]: {"allocated_table": None, "table_number": None}
+        })
         run.assert_called_once_with(str(batch_id))
 
     def test_email_endpoints_require_authentication(self):
@@ -122,6 +127,61 @@ class WeddingEmailTest(unittest.TestCase):
             result = emails._load_guests([row["id"] for row in guests])
         self.assertEqual(len(result), 205)
         self.assertEqual(query.in_.call_count, 3)
+
+    def test_seating_in_html_and_actual_mime(self):
+        for table, number, expected in [("幸福滿桌", 8, "第 8 桌｜幸福滿桌"),
+                                        ("好友桌", None, "好友桌"),
+                                        (None, None, "座位安排中")]:
+            guest = {**GUEST, "allocated_table": table, "table_number": number}
+            with self.subTest(expected=expected):
+                html, text = render_email(guest, self.content)
+                message = build_message(guest, self.content, uuid4())
+                for value in (html, text, message.get_body(preferencelist=("html",)).get_content(),
+                              message.get_body(preferencelist=("plain",)).get_content()):
+                    self.assertIn(expected, value)
+                self.assertIn("為你留好的座位", html)
+        html, _ = render_email({**GUEST, "allocated_table": "<script>table</script>"}, self.content)
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;table&lt;/script&gt;", html)
+
+    def test_load_guests_joins_table_numbers_and_keeps_unassigned_guests(self):
+        second_id = str(uuid4())
+        db = MagicMock()
+        guest_query, table_query = MagicMock(), MagicMock()
+        db.table.side_effect = lambda name: guest_query if name == "guests" else table_query
+        guest_query.select.return_value.in_.return_value.is_.return_value.order.return_value.execute.return_value.data = [
+            {**GUEST, "status": "attend", "allocated_table": "幸福滿桌"},
+            {**GUEST, "id": second_id, "status": "attend", "allocated_table": None},
+        ]
+        table_query.select.return_value.in_.return_value.execute.return_value.data = [
+            {"table_name": "幸福滿桌", "table_number": 8}]
+        with patch.object(emails, "get_supabase", return_value=db):
+            guests = {guest["id"]: guest for guest in emails._load_guests([GUEST["id"], second_id])}
+        self.assertEqual(guests[GUEST["id"]]["table_number"], 8)
+        self.assertEqual(guests[GUEST["id"]]["allocated_table"], "幸福滿桌")
+        self.assertIsNone(guests[second_id]["allocated_table"])
+        self.assertIsNone(guests[second_id]["table_number"])
+
+    def test_worker_uses_seating_snapshot_and_blocks_later_seat_changes(self):
+        for changed in (False, True):
+            with self.subTest(changed=changed):
+                db = MagicMock()
+                delivery = {**GUEST, "id": str(uuid4()), "guest_id": GUEST["id"]}
+                db.rpc.return_value.execute.side_effect = [
+                    SimpleNamespace(data={"state": "claimed", "delivery": delivery}),
+                    SimpleNamespace(data={"state": "empty"})]
+                seating = {"allocated_table": "幸福滿桌", "table_number": 8}
+                content = {**self.content.model_dump(), "seating_by_guest": {GUEST["id"]: seating}}
+                current = {**GUEST, **seating, "table_number": 9 if changed else 8}
+                with patch.object(emails, "get_supabase", return_value=db), patch.object(emails, "_batch", return_value={"sender": settings.smtp_username.lower(), "content": content}), patch.object(emails, "_load_guests", return_value=[current]), patch.object(emails, "send_message") as smtp:
+                    emails._run_batch(str(uuid4()))
+                if changed:
+                    smtp.assert_not_called()
+                    updates = [call.args[0] for call in db.table.return_value.update.call_args_list]
+                    self.assertIn("failed", [row.get("status") for row in updates])
+                else:
+                    smtp.assert_called_once()
+                    self.assertIn("第 8 桌｜幸福滿桌", smtp.call_args.args[0].get_body(preferencelist=("html",)).get_content())
 
     def test_smtp_uses_tls_and_one_recipient(self):
         with patch.object(settings, "smtp_port", 587), patch.object(settings, "smtp_username", "sender@gmail.com"), patch.object(settings, "smtp_password", "app password"), patch("app.services.wedding_email.smtplib.SMTP") as smtp:

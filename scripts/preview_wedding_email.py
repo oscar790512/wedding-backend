@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--output', default='previews/wedding-email.html')
 parser.add_argument('--fixture-json')
 args = parser.parse_args()
-guest = {'id': '00000000-0000-4000-8000-000000000001', 'name': '王小明', 'email': 'guest@example.com', 'checkin_token': 'preview-only-not-a-real-checkin-token'}
+guest = {'id': '00000000-0000-4000-8000-000000000001', 'name': '王小明', 'email': 'guest@example.com', 'checkin_token': 'preview-only-not-a-real-checkin-token', 'allocated_table': '幸福滿桌', 'table_number': 8}
 content = WeddingEmailContent()
 image = 'data:image/png;base64,' + base64.b64encode(qr_png(guest['checkin_token'])).decode()
 html, text = render_email(guest, content, image)

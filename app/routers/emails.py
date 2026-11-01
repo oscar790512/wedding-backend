@@ -39,8 +39,14 @@ def _load_guests(guest_ids):
     result = []
     # Bound URL lengths and do not rely on PostgREST's default row limit.
     for start in range(0, len(ids), 100):
-        result.extend(execute_read(get_supabase().table("guests").select("id,name,email,status,checkin_token")
+        result.extend(execute_read(get_supabase().table("guests").select("id,name,email,status,checkin_token,allocated_table")
             .in_("id", ids[start:start + 100]).is_("deleted_at", "null").order("id")).data)
+    table_names = sorted({row["allocated_table"] for row in result if row.get("allocated_table")})
+    tables = {}
+    for start in range(0, len(table_names), 100):
+        rows = execute_read(get_supabase().table("table_settings").select("table_name,table_number")
+            .in_("table_name", table_names[start:start + 100])).data
+        tables.update({row["table_name"]: row.get("table_number") for row in rows})
     by_id = {row["id"]: row for row in result}
     guests = []
     for guest_id in ids:
@@ -50,7 +56,8 @@ def _load_guests(guest_ids):
         email = str(row.get("email") or "").strip()
         if not email or "@" not in email or any(c.isspace() or ord(c) < 32 for c in email) or any(c in email for c in '<>,;'):
             raise HTTPException(422, "選取的賓客有無效 Email，請先修正賓客資料")
-        guests.append({"id": guest_id, "name": row["name"], "email": email, "checkin_token": row["checkin_token"]})
+        guests.append({"id": guest_id, "name": row["name"], "email": email, "checkin_token": row["checkin_token"],
+                       "allocated_table": row.get("allocated_table"), "table_number": tables.get(row.get("allocated_table"))})
     return guests
 
 
@@ -95,19 +102,26 @@ def _run_batch(batch_id):
                 return
             delivery = result["delivery"]
             guest = {"id": delivery["guest_id"], "name": delivery["name"], "email": delivery["email"], "checkin_token": delivery["checkin_token"]}
+            # Store per-recipient seating with the existing batch JSON, preserving the reviewed snapshot.
+            seating_snapshots = batch["content"].get("seating_by_guest")
             outcome = {"status": "sent", "error": None}
             pause = False
             phase = "prepare_message"
             try:
+                if seating_snapshots is not None:
+                    guest.update(seating_snapshots[str(delivery["guest_id"])])
                 current = _load_guests([delivery["guest_id"]])[0]
+                # Legacy batches were reviewed without seating; keep their original snapshot behavior.
+                if seating_snapshots is None:
+                    current = {key: current[key] for key in guest}
                 if current != guest:
-                    raise ValueError("賓客姓名、Email 或報到碼已變更，請確認資料後再寄送")
+                    raise ValueError("賓客姓名、Email、報到碼或座位已變更，請確認資料後再寄送")
                 message = build_message(guest, content, batch_id)
             except httpx.TransportError:
                 outcome = {"status": "failed", "error": "暫時無法讀取賓客資料，此封尚未送出，請稍後重試。"}
                 pause = True
             except Exception:
-                outcome = {"status": "failed", "error": "賓客資料已異動或信件無法建立，請確認賓客資料後再試。"}
+                outcome = {"status": "failed", "error": "賓客資料或座位已異動，或信件無法建立；請重新選取賓客並預覽後寄送。"}
             else:
                 try:
                     phase = "smtp"
@@ -184,9 +198,12 @@ def send(payload: EmailSendRequest, background: BackgroundTasks, admin=Depends(r
     guests = _load_guests(payload.guest_ids)
     if not verify_preview(payload.preview_token, payload.batch_id, guests, payload.content):
         raise HTTPException(409, "預覽已過期，或名單／信件內容已變更，請重新預覽後再寄送")
+    batch_content = {**payload.content.model_dump(), "seating_by_guest": {
+        guest["id"]: {key: guest.get(key) for key in ("allocated_table", "table_number")} for guest in guests
+    }}
     get_supabase().rpc("enqueue_wedding_email", {"p_id": str(payload.batch_id), "p_campaign": CAMPAIGN,
         "p_sender": settings.smtp_username.lower(), "p_actor": admin["username"],
-        "p_content": payload.content.model_dump(), "p_guests": guests}).execute()
+        "p_content": batch_content, "p_guests": guests}).execute()
     background.add_task(_run_batch, str(payload.batch_id))
     return {"batch_id": str(payload.batch_id)}
 

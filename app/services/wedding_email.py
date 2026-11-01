@@ -16,7 +16,7 @@ import qrcode
 from app.config import settings
 
 CAMPAIGN = "wedding-2026-11-08"
-TEMPLATE_VERSION = 1
+TEMPLATE_VERSION = 2
 
 
 class SmtpSetupError(Exception):
@@ -34,6 +34,10 @@ def render_email(guest: dict, content, image_src="cid:checkin-qr") -> tuple[str,
     data = content.model_dump()
     e = {key: escape(value) for key, value in data.items()}
     name = escape(guest["name"])
+    table_name = guest.get("allocated_table")
+    table_number = guest.get("table_number")
+    seating = (f"第 {table_number} 桌｜{table_name}" if table_number else table_name) if table_name else "座位安排中，抵達時請洽現場報到人員。"
+    seating_note = "這是你與同行親友的桌次，完成報到後，請依現場桌牌入座；若需要協助，歡迎詢問工作人員。"
     paragraphs = "".join(f'<p style="margin:0 0 16px">{escape(p)}</p>' for p in data["message"].splitlines() if p.strip())
     parking = e["parking"].replace("\n", "<br>")
     maps = "https://www.google.com/maps/search/?api=1&query=" + quote(data["address"])
@@ -43,12 +47,15 @@ def render_email(guest: dict, content, image_src="cid:checkin-qr") -> tuple[str,
 <body style="margin:0;background:#f7f0ea;color:#43352f;font-family:Arial,'Microsoft JhengHei',sans-serif;line-height:1.85">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#fffdf9;border:1px solid #e6d6c8;border-radius:12px">
-<tr><td style="padding:36px 26px;text-align:center;background:#934e44;color:#fff7ec"><p style="font-size:11px;letter-spacing:4px;margin:0">WE ARE GETTING MARRIED</p><h1 style="font-family:serif;font-size:32px;margin:12px 0">祺元 &amp; 姵妤</h1><p style="margin:0">2026.11.08 · 好久不見，婚禮見</p></td></tr>
+<tr><td style="padding:36px 26px;text-align:center;background:#934e44;color:#fff7ec"><p style="font-size:11px;letter-spacing:4px;margin:0">WE ARE GETTING MARRIED</p><h1 style="font-family:serif;font-size:32px;margin:12px 0">祺元 &amp; 姵妤</h1><p style="font-family:Georgia,serif;font-size:21px;letter-spacing:1px;margin:0 0 16px">Oscar &amp; Peiyu</p><p style="margin:0">2026.11.08 · 好久不見，婚禮見</p></td></tr>
 <tr><td style="padding:30px 26px"><p style="font-size:19px"><strong>親愛的 {name}，</strong></p>{paragraphs}
 <h2 style="font-size:20px;color:#934e44;border-bottom:1px solid #e6d6c8;padding-bottom:8px">把這天留給幸福</h2>
 <p><strong>婚禮時間</strong><br>{e['wedding_time']}</p><p><strong>婚宴地點</strong><br>{e['venue']}<br>{e['address']}</p>
 <a href="{escape(maps, quote=True)}" style="{button}">開啟婚宴導航</a>
 <h2 style="font-size:20px;color:#934e44">開車赴約的小提醒</h2><p>{parking}</p><a href="{escape(parking_maps, quote=True)}" style="color:#934e44">查看附近停車場 →</a>
+<h2 style="font-size:20px;color:#934e44">為你留好的座位</h2>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f0ea;border:1px solid #e6d6c8;border-radius:8px"><tr><td style="padding:18px 20px"><span style="font-size:13px;color:#7b6b64">你的桌次</span><br><strong style="font-size:22px;color:#934e44">{escape(seating)}</strong></td></tr></table>
+<p>{seating_note}</p>
 <h2 style="font-size:20px;color:#934e44">你的專屬報到 QR Code</h2>
 <p>請提前將下方 QR Code 截圖或儲存到手機相簿。抵達現場後，向報到人員出示，由工作人員掃描即可協助完成報到，讓我們更快和你見面！</p>
 <table role="presentation" width="100%" style="border:1px dashed #d6bcab;background:#fff"><tr><td align="center" style="padding:20px"><strong>{name} 的報到碼</strong><br><img src="{escape(image_src, quote=True)}" width="232" height="232" alt="{name} 的專屬報到 QR Code" style="display:block;max-width:100%;height:auto;margin:12px auto"><span style="font-size:13px">建議提前存圖 · 此碼供你與同行親友報到使用</span></td></tr></table>
@@ -57,7 +64,7 @@ def render_email(guest: dict, content, image_src="cid:checkin-qr") -> tuple[str,
 <h2 style="font-size:20px;color:#934e44">和新人保持聯繫</h2><p>加入我們的 LINE 官方帳號，接收婚禮提醒與座位資訊；有任何問題，也歡迎在這裡和我們說一聲。</p><p><strong>LINE ID：{e['line_id']}</strong></p><a href="{e['line_url']}" style="{button};background:#33775b">加入新人 LINE 官方帳號</a><p style="font-size:13px;word-break:break-all">{e['line_url']}</p>
 <p style="margin-top:32px">謝謝你，把這一天留給我們。<br>期待見到你！<br><strong>祺元 &amp; 姵妤 敬邀</strong></p></td></tr></table>
 </td></tr></table></body></html>'''
-    text = f"親愛的 {guest['name']}，\n\n{data['message']}\n\n婚禮時間：{data['wedding_time']}\n地點：{data['venue']}\n地址：{data['address']}\n導航：{maps}\n\n停車建議：\n{data['parking']}\n附近停車場：{parking_maps}\n\n請提前儲存隨信的 checkin-qr.png，抵達時出示給工作人員掃描報到。手機自行掃碼不會完成報到。\n\n電子喜帖：{data['invitation_url']}\nLINE 官方連結：{data['line_url']}\nLINE ID：{data['line_id']}\n\n期待見到你！\n祺元 & 姵妤 敬邀"
+    text = f"親愛的 {guest['name']}，\n\n{data['message']}\n\n婚禮時間：{data['wedding_time']}\n地點：{data['venue']}\n地址：{data['address']}\n導航：{maps}\n\n停車建議：\n{data['parking']}\n附近停車場：{parking_maps}\n\n為你留好的座位\n你的桌次：{seating}\n{seating_note}\n\n請提前儲存隨信的 checkin-qr.png，抵達時出示給工作人員掃描報到。手機自行掃碼不會完成報到。\n\n電子喜帖：{data['invitation_url']}\nLINE 官方連結：{data['line_url']}\nLINE ID：{data['line_id']}\n\n期待見到你！\n祺元 & 姵妤 敬邀"
     return html, text
 
 
