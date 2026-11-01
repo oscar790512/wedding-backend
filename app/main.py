@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.routers import admin, auth, rsvp, emails
+from app.routers import admin, auth, rsvp, emails, email_relay
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -30,6 +30,7 @@ app.include_router(rsvp.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(emails.router, prefix="/api")
+app.include_router(email_relay.router, prefix="/api")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

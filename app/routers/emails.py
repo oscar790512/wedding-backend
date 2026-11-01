@@ -14,7 +14,7 @@ from app.config import settings
 from app.database import execute_idempotent_write, execute_read, get_supabase
 from app.schemas.email import EmailManualResolution, EmailPreviewRequest, EmailResumeRequest, EmailSendRequest, WeddingEmailContent
 from app.services.wedding_email import (
-    CAMPAIGN, SmtpSetupError, build_message, preview_signature, qr_png, render_email,
+    CAMPAIGN, RelayNotSubmittedError, SmtpSetupError, build_message, preview_signature, qr_png, render_email,
     send_message, smtp_ready, verify_preview,
 )
 
@@ -70,6 +70,8 @@ def _batch(batch_id):
 
 def _require_smtp():
     if not smtp_ready():
+        if settings.email_relay_url:
+            raise HTTPException(503, "尚未完成代寄設定。請在後端設定 SMTP_USERNAME、EMAIL_RELAY_URL 與 EMAIL_RELAY_SECRET。")
         raise HTTPException(503, "尚未設定 Gmail SMTP。請在後端設定 SMTP_USERNAME 與 SMTP_PASSWORD（應用程式密碼）。")
 
 
@@ -129,6 +131,9 @@ def _run_batch(batch_id):
                     outcome["sent_at"] = datetime.now(timezone.utc).isoformat()
                 except smtplib.SMTPAuthenticationError:
                     outcome = {"status": "failed", "error": "SMTP 驗證失敗，請檢查應用程式密碼。"}
+                    pause = True
+                except RelayNotSubmittedError as exc:
+                    outcome = {"status": "failed", "error": exc.user_message}
                     pause = True
                 except SmtpSetupError:
                     outcome = {"status": "failed", "error": "SMTP 連線失敗，請檢查主機、連接埠與網路後重試。"}

@@ -197,6 +197,12 @@ class WeddingEmailTest(unittest.TestCase):
     def test_auth_failure_pauses_without_marking_sent(self):
         self._worker_failure(smtplib.SMTPAuthenticationError(535, b"bad password"), "failed")
 
+    def test_relay_response_loss_is_unknown_but_confirmed_no_submission_is_failed(self):
+        from app.services.email_relay import RelayOutcomeUnknown
+        from app.services.wedding_email import RelayNotSubmittedError
+        self._worker_failure(RelayOutcomeUnknown(), "unknown")
+        self._worker_failure(RelayNotSubmittedError("quota"), "failed")
+
     def _worker_failure(self, exception, status):
         db = MagicMock()
         delivery = {**GUEST, "guest_id": GUEST["id"], "id": str(uuid4())}

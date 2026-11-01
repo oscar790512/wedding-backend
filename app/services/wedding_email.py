@@ -23,6 +23,17 @@ class SmtpSetupError(Exception):
     """Connection/setup failed before the message could be submitted."""
 
 
+class RelayNotSubmittedError(SmtpSetupError):
+    """The authenticated relay definitively confirmed this attempt was not accepted."""
+    def __init__(self, reason):
+        self.user_message = {
+            "quota": "代寄主機已達滾動 24 小時寄送上限，請待額度恢復後再重試。",
+            "wait": "代寄主機正在處理其他信件，此封尚未寄出，請稍後重試。",
+            "rejected": "代寄主機的 Gmail SMTP 拒絕此封信件，請確認地址與帳號額度後重試。",
+        }.get(reason, "代寄主機尚未完成 SMTP 設定或無法連線，此封尚未寄出，請檢查代寄主機後重試。")
+        super().__init__(self.user_message)
+
+
 def qr_png(token: str) -> bytes:
     image = qrcode.make(f"wedding-checkin:{token}", box_size=8, border=4)
     buffer = io.BytesIO()
@@ -83,6 +94,9 @@ def verify_preview(token, batch_id, guests, content):
 
 
 def smtp_ready():
+    if settings.email_relay_url:
+        from app.services.email_relay import relay_client_ready
+        return relay_client_ready()
     return bool(settings.smtp_username and settings.smtp_password and settings.smtp_port in (465, 587))
 
 
@@ -100,6 +114,14 @@ def build_message(guest, content, batch_id):
 
 
 def send_message(message):
+    if settings.email_relay_url:
+        from app.services.email_relay import send_via_relay
+        return send_via_relay(message)
+    return send_smtp_message(message)
+
+
+def connect_smtp():
+    """Connect and authenticate without submitting a message; shared by relay diagnostics."""
     context = ssl.create_default_context()
     client = None
     try:
@@ -119,6 +141,11 @@ def send_message(message):
         if isinstance(exc, smtplib.SMTPAuthenticationError):
             raise
         raise SmtpSetupError from exc
+    return client
+
+
+def send_smtp_message(message):
+    client = connect_smtp()
     try:
         client.send_message(message, from_addr=settings.smtp_username, to_addrs=[str(message["To"])])
     finally:

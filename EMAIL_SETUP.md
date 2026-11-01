@@ -23,6 +23,49 @@ WEDDING_INVITATION_URL=https://oscar-peiyu-wedding.vercel.app/invitation
 
 `SMTP_DAILY_LIMIT` 是本系統滾動 24 小時的寄送**嘗試**上限，預設 450，並非 Gmail 剩餘額度。其他裝置／網頁寄信也會消耗 Google 帳號額度；超限或被拒絕時系統會暫停。全帳號批次共用資料庫額度保留與發送間隔。此額度限制和間隔不會保證 Gmail 接受所有信件。
 
+## 正式環境透過 Staging HTTPS 代寄
+
+正式環境保留完整名單、預覽簽章、批次與寄送結果，僅把當封已產生的 MIME 信件（含個人桌次、QR 圖）經 TLS 傳給 staging 的寄信 API。Staging 使用自己的 SMTP 帳號與自己的 Supabase；不需要正式資料庫金鑰，也不查詢 staging 賓客名單。收件人收到的 HTML、純文字與 QR 圖都沿用正式環境確認的內容。
+
+啟用順序：
+
+1. 先部署 **wedding-database** 的 `20261101000000_wedding_email_relay.sql`，依既有流程部署 staging / production。新表只保留請求 UUID、寄件帳號、內容 SHA-256、狀態與時間，不保存 MIME、收件地址或 QR token。表開啟 RLS，僅 service role 可操作。
+2. 部署新版 backend 至兩個環境。未設定代寄參數時，既有直接 SMTP 流程不變；新端點預設停用。
+3. 產生專用隨機共用密鑰（例如 `openssl rand -hex 32`），只放進兩個服務的私密環境變數。不要沿用 JWT、Supabase 或 Gmail 密碼，也不要放到前端／Git。
+4. 在 **Northflank staging** 設定：
+
+   ```dotenv
+   EMAIL_RELAY_ENABLED=true
+   EMAIL_RELAY_SECRET=<專用共用密鑰，至少32字元>
+   EMAIL_RELAY_URL=
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=465
+   SMTP_USERNAME=<Gmail寄件帳號>
+   SMTP_PASSWORD=<Gmail應用程式密碼>
+   ```
+
+5. 在 **Render production** 設定：
+
+   ```dotenv
+   EMAIL_RELAY_ENABLED=false
+   EMAIL_RELAY_URL=https://<Northflank staging 網域>/api/internal/email-relay/send
+   EMAIL_RELAY_SECRET=<與staging相同的專用共用密鑰>
+   SMTP_USERNAME=<與staging相同的Gmail寄件帳號>
+   ```
+
+   Prod 不再需要使用 SMTP_PASSWORD，所有寄送走 HTTPS；不會在失敗時改走直接 SMTP。Staging 的 EMAIL_RELAY_URL 必須維持空白，自己原有的寄信流程仍走直接 SMTP。環境變數更新後需重新部署／重啟生效。
+
+6. 在載入 **production 代寄設定** 的後端環境執行 `.venv/bin/python scripts/check_email_relay.py`。此命令呼叫有簽章的 `/api/internal/email-relay/check`，檢查 staging 代寄紀錄表、SMTP 連線及登入、寄件帳號一致性；不傳賓客內容、不建立寄送紀錄，也不寄信。成功會顯示 `RELAY_READY`。本機若載入 staging 的 `.env`，需以私密環境設定覆蓋上述 production 代寄參數後再執行，勿改動 Supabase 指向正式資料庫。
+7. 確認診斷成功後，在正式頁面重新預覽，再由管理員確認寄送或重試明確失敗的信件。部署與診斷不會自動恢復批次。
+
+請求使用 HMAC-SHA256，綁定原始 body 與時間戳（有效期 5 分鐘）；只接受設定的寄件帳號、單一收件人、無 Cc/Bcc、上限 1 MB。簽章失敗或端點未啟用時不會接觸資料庫／SMTP。請保持主機時間同步，不要把共用密鑰寫入 URL。
+
+每次寄送嘗試的 Message-ID 對應固定請求 UUID。Staging 在 SMTP 前透過資料庫交易取得一次性的寄送權，重複／並行請求、程序重啟、回覆遺失都不會再取得寄送權。只有確定 Gmail 已接受且結果成功保存時，才回傳 `sent`；逾時、結果保存失敗或接手未完成的請求一律回傳 `unknown`。Prod 保留既有人工查證流程，不自動重寄。不應刪除或重設代寄紀錄來嘗試修復卡住的信件。
+
+Staging 直接寄送與代寄請求共用該機器同一 Gmail 帳號的滾動額度與寄送間隔；正式環境也保留自己的額度上限。其他環境／Gmail 網頁自行寄出的信仍不在此共用計數中。代寄端達額度或忙碌時，本次尚未送出的信會標為失敗並暫停，需稍後手動重試。
+
+Staging 停機、重新部署或資料庫不可用時，正式寄信也會暫停。保持 endpoint、共用密鑰、紀錄表穩定；回復直接 SMTP 可清空 production 的 EMAIL_RELAY_URL，但 Render Free 的 SMTP 限制仍存在。
+
 ## 模板、座位與報到碼
 
 暖色信件包含邀請文稿、2026/11/8 12:00 入場／12:30 午宴、老新台菜十全店 2 樓 A 廳與地址、停車建議／導航、個人桌次、電子喜帖、新人 LINE 連結與 ID、專屬報到 QR Code。預設資料沿用現有 RSVP／喜帖，內容可在寄送前編輯，每批存下確認時的模板。

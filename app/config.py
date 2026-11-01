@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     smtp_sender_name: str = "祺元 & 姵妤"
     smtp_daily_limit: int = 450
     smtp_interval_seconds: float = 2.0
+    email_relay_url: str = ""
+    email_relay_secret: str = ""
+    email_relay_enabled: bool = False
     wedding_invitation_url: str = "https://oscar-peiyu-wedding.vercel.app/invitation"
 
 
